@@ -61,11 +61,12 @@ boundary.
   timestamp, prediction, detection, and abundance paths.
 - `configs/yolo_train.example.conf.sh` contains model-training settings that do
   not belong to a cruise-processing run.
-- `image_abundance.sh` merges labels and computes abundance directly.
+- `image_abundance.sh` consumes the completed frame list and detection results,
+  then merges labels and computes abundance directly.
 - `image_abundance.sbatch` contains the same abundance pipeline for Slurm.
-- `frame_timestamps.sh` builds only the media/frame timestamp CSV directly.
-- `frame_timestamps.sbatch` builds only the media/frame timestamp CSV
-  as one Slurm job.
+- `frame_timestamps.sh` scans the videos and builds the shared video and frame
+  lists directly.
+- `frame_timestamps.sbatch` builds the same two shared lists as one Slurm job.
 - `yolo_train.sh` runs native Ultralytics training directly or from a
   Prefect shell task.
 - `yolo_train.sbatch` contains the same training pipeline with Slurm
@@ -92,11 +93,10 @@ Copy the cruise template once for each cruise and edit only the copied config:
 cp configs/cruise.example.conf.sh configs/my_cruise.conf.sh
 ```
 
-The global section defines `CRUISE`, `CRUISE_DATE`, `CRUISE_COLLECTION`,
-`CAMERA_STREAM`, and `VIDEO_SUFFIX`. `RUN_NAME` is always
-`CRUISE_DATE_CRUISE`; `CRUISE_DATE` must match the date parsed from the media
-filenames. Directory roots are configured once, then all operational paths are
-derived consistently:
+The first section contains the cruise values and artifact paths shared by all
+three flows. `RUN_NAME` is always `CRUISE_DATE_CRUISE`; `CRUISE_DATE` must match
+the date parsed from the media filenames. Directory roots are configured once,
+then all operational paths are derived consistently:
 
 ```text
 VIDEO_INPUT_DIR      VIDEO_DATA_ROOT/CRUISE_COLLECTION_CRUISE/CAMERA_STREAM
@@ -108,11 +108,44 @@ CLASS_MAP_CSV        ANALYSIS_WORK_DIR/RUN_NAME_class_map.csv
 ABUNDANCE_OUT_CSV    .../ABUNDANCE_DATASET/RUN_NAME.csv
 ```
 
-Set `ENABLE_TIMESTAMPS`, `ENABLE_PREDICTION`, or `ENABLE_ABUNDANCE` to `0` when
-that stage should be skipped. Every direct and Slurm runner accepts the same
-cruise config as its first argument. Timestamping produces the inventory used
-by prediction, and abundance consumes the frame list and prediction labels; no
-later stage silently reruns an earlier stage.
+The remaining config sections correspond directly to timestamp, inference, and
+abundance. Set that section's `ENABLE_*` value to `0` when a flow should be
+skipped. Every direct and Slurm runner accepts this same cruise config as its
+first argument.
+
+The timestamp flow creates both shared list artifacts. Inference reads
+`VIDEO_LIST_CSV`; abundance reads `FRAME_LIST_CSV`. These are handoffs between
+flows: neither inference nor abundance scans videos or regenerates timestamps.
+
+## Run the Three Flows
+
+After editing the cruise config, run the enabled flows in order. The direct
+runners work in WSL2 and can also be invoked by Prefect:
+
+```bash
+bash frame_timestamps.sh configs/my_cruise.conf.sh
+bash yolo_predict.sh configs/my_cruise.conf.sh
+bash image_abundance.sh configs/my_cruise.conf.sh
+```
+
+The first command writes `VIDEO_LIST_CSV` and `FRAME_LIST_CSV`. The second reads
+the video list and writes model predictions. The third reads the frame list,
+the predictions, and `SENSOR_CSV`, then writes `ABUNDANCE_OUT_CSV`.
+
+For Slurm, create the log directory once and submit the same three flows with
+dependencies. `afterok` prevents a downstream flow from starting unless its
+upstream job completed successfully:
+
+```bash
+mkdir -p slogs
+TIMESTAMP_JOB=$(sbatch --parsable frame_timestamps.sbatch configs/my_cruise.conf.sh)
+PREDICTION_JOB=$(sbatch --parsable --dependency="afterok:$TIMESTAMP_JOB" --array=0-99%3 yolo_predict.sbatch configs/my_cruise.conf.sh)
+sbatch --dependency="afterok:$PREDICTION_JOB" image_abundance.sbatch configs/my_cruise.conf.sh
+```
+
+Adjust `--array=0-99%3` to match the required number of prediction batches and
+the allowed GPU concurrency. A dependency on the prediction array waits for all
+array elements before abundance begins.
 
 ## YOLO Training
 
@@ -187,13 +220,9 @@ all Slurm runners and rebuild the environment with that Python version. Local
 runners and the WSL2 setup do not load HPC modules and can be invoked by
 Prefect.
 
-Create the log directory before submitting because Slurm opens output files
-before the job script begins:
-
-```bash
-mkdir -p slogs
-sbatch --array=0-99%3 yolo_predict.sbatch configs/my_cruise.conf.sh
-```
+Create `slogs` before submitting because Slurm opens output files before the job
+script begins. The complete dependency-based submission sequence is shown in
+`Run the Three Flows`.
 
 ## YOLO with Prefect
 
@@ -237,28 +266,6 @@ If `MERGE_LABELS="1"`, the runner builds both tables from `LABEL_DIRS` and
 `CLASS_YAML`. If `MERGE_LABELS="0"`, the runner uses an existing detection table.
 When `CLASS_MAP_CSV` is missing, the runner creates it from `CLASS_YAML` before
 computing abundance.
-
-## Direct or Prefect Workflow
-
-Run the enabled stages in order with the same cruise configuration:
-
-```bash
-bash frame_timestamps.sh configs/my_cruise.conf.sh
-bash yolo_predict.sh configs/my_cruise.conf.sh
-bash image_abundance.sh configs/my_cruise.conf.sh
-```
-
-## Slurm Run
-
-Submit the enabled stages with the same configuration. Use Slurm dependencies
-or an external orchestrator so abundance begins only after every prediction
-array task succeeds:
-
-```bash
-sbatch frame_timestamps.sbatch configs/my_cruise.conf.sh
-sbatch --array=0-99%3 yolo_predict.sbatch configs/my_cruise.conf.sh
-sbatch image_abundance.sbatch configs/my_cruise.conf.sh
-```
 
 ## Command Steps
 

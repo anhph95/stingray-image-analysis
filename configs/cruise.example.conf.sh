@@ -1,5 +1,5 @@
 ###############################################################################
-# Global workflow identity and stage selection
+# Shared cruise configuration and artifact paths
 ###############################################################################
 
 CRUISE="CHANGEME_CRUISE"
@@ -10,14 +10,9 @@ CAMERA_STREAM="CHANGEME_CAMERA_STREAM"
 VIDEO_SUFFIX=".avi"
 RUN_NAME="${CRUISE_DATE}_${CRUISE}"
 
-ENABLE_TIMESTAMPS="1"
-ENABLE_PREDICTION="1"
-ENABLE_ABUNDANCE="1"
+# The timestamp mode is part of both shared list names. Keeping it here ensures
+# timestamp, inference, and abundance resolve the same artifacts.
 TIMESTAMP_MODE="fast"
-
-###############################################################################
-# Environments, directory roots, and derived paths
-###############################################################################
 
 CVISION_ENV="$SCRIPT_DIR/.venv/cvision"
 MODEL_ENV="$CVISION_ENV"
@@ -25,6 +20,8 @@ MODEL_ENV="$CVISION_ENV"
 VIDEO_DATA_ROOT="CHANGEME_VIDEO_DATA_ROOT"
 STINGRAY_DATA_ROOT="CHANGEME_STINGRAY_DATA_ROOT"
 MODEL_OUTPUT_ROOT="CHANGEME_MODEL_OUTPUT_ROOT"
+SENSOR_DATASET="CHANGEME_SENSOR_DATASET"
+ABUNDANCE_DATASET="shadowgraph"
 
 VIDEO_INPUT_DIR="${VIDEO_DATA_ROOT}/${CRUISE_COLLECTION}_${CRUISE}/${CAMERA_STREAM}"
 MEDIA_LIST_DIR="${STINGRAY_DATA_ROOT}/media_list/${CAMERA_STREAM}"
@@ -36,9 +33,6 @@ VIDEO_LIST_CSV="${MEDIA_LIST_DIR}/${RUN_NAME}_video_list_${TIMESTAMP_MODE}.csv"
 FRAME_LIST_CSV="${MEDIA_LIST_DIR}/${RUN_NAME}_frame_list_${TIMESTAMP_MODE}.csv"
 DETECTIONS_CSV="${ANALYSIS_WORK_DIR}/${RUN_NAME}_detection_labels.csv"
 CLASS_MAP_CSV="${ANALYSIS_WORK_DIR}/${RUN_NAME}_class_map.csv"
-
-SENSOR_DATASET="CHANGEME_SENSOR_DATASET"
-ABUNDANCE_DATASET="shadowgraph"
 SENSOR_CSV="${STINGRAY_DATA_ROOT}/dashboard_data/data/${SENSOR_DATASET}/${RUN_NAME}.csv"
 ABUNDANCE_OUT_CSV="${STINGRAY_DATA_ROOT}/dashboard_data/data/${ABUNDANCE_DATASET}/${RUN_NAME}.csv"
 
@@ -46,6 +40,7 @@ ABUNDANCE_OUT_CSV="${STINGRAY_DATA_ROOT}/dashboard_data/data/${ABUNDANCE_DATASET
 # Frame timestamp configuration
 ###############################################################################
 
+ENABLE_TIMESTAMPS="1"
 TIMESTAMP_FILE_LIMIT=""
 TIMESTAMP_MAX_WORKERS=""
 TIMESTAMP_SUFFIXES=("$VIDEO_SUFFIX")
@@ -54,6 +49,7 @@ TIMESTAMP_SUFFIXES=("$VIDEO_SUFFIX")
 # Model prediction configuration
 ###############################################################################
 
+ENABLE_PREDICTION="1"
 MODEL_WEIGHTS_PATH="CHANGEME_MODEL_WEIGHTS_PATH"
 PREDICTION_NAME="predict"
 PREDICTION_BATCH_SIZE=1000
@@ -93,6 +89,7 @@ PREDICTION_ARGS=(
 # Image abundance configuration
 ###############################################################################
 
+ENABLE_ABUNDANCE="1"
 CLASS_YAML="CHANGEME_CLASS_NAMES_YAML"
 MERGE_LABELS="1"
 LABEL_DIRS=("$PREDICTION_PROJECT")
