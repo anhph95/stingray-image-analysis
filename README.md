@@ -1,4 +1,4 @@
-# Image Analysis Workflow
+# Stingray Image Analysis Workflow
 
 This workflow merges ML detection labels, builds optional media/frame timestamp
 CSVs, and computes time-binned shadowgraph abundance from existing Stingray
@@ -17,8 +17,8 @@ Clone the workflow repository, then create the shared computer-vision
 environment used for development and by the workflow runners:
 
 ```bash
-git clone https://github.com/anhph95/image-analysis.git
-cd image-analysis
+git clone https://github.com/anhph95/stingray-image-analysis.git
+cd stingray-image-analysis
 
 module load miniconda/25.9
 python -m venv .venv/cvision
@@ -152,7 +152,7 @@ No Prefect-specific flow is included. A Prefect shell task can invoke the same
 configured workflow used locally and by Slurm:
 
 ```bash
-bash /path/to/image-analysis/run_yolo.sh
+bash /path/to/stingray-image-analysis/run_yolo.sh
 ```
 
 Prefect captures the script's standard output and error, including the YOLO

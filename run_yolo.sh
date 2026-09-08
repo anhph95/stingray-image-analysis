@@ -25,7 +25,7 @@ RUN_TRAINING="1"
 RUN_INFERENCE="1"
 
 # Every entry is passed unchanged after `yolo`. These settings reproduce the
-# working training command used for the image-analysis workflow.
+# working training command used for the Stingray image-analysis workflow.
 TRAIN_ARGS=(
     mode=train
     model=yolov8x
