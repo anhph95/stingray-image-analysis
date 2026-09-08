@@ -3,7 +3,7 @@
 ###############################################################################
 
 ENABLE_TRAINING="1"
-MODEL_ENV="$SCRIPT_DIR/.venv/cvision"
+MODEL_ENV=".venv/cvision"
 
 TRAIN_ARGS=(
     mode=train

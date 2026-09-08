@@ -13,8 +13,6 @@
 # Run post-inference image abundance processing in one Slurm job.
 ###############################################################################
 
-SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-
 # LOGGING JOB DETAILS
 
 echo "Job ID: $SLURM_JOB_ID, JobName: $SLURM_JOB_NAME"
@@ -31,9 +29,6 @@ CONFIG_PATH="${1:-}"
 if [[ -z "$CONFIG_PATH" ]]; then
     echo "[ERROR] Provide a cruise configuration file." >&2
     exit 2
-fi
-if [[ "$CONFIG_PATH" != /* ]]; then
-    CONFIG_PATH="$SCRIPT_DIR/$CONFIG_PATH"
 fi
 if [[ ! -f "$CONFIG_PATH" ]]; then
     echo "[ERROR] Configuration does not exist: $CONFIG_PATH" >&2
@@ -119,7 +114,7 @@ mkdir -p "$(dirname "$DETECTIONS_CSV")" "$(dirname "$CLASS_MAP_CSV")" "$(dirname
 
 if [[ "$MERGE_LABELS" == "1" ]]; then
     echo "[INFO] Merging detection labels."
-    bash "$SCRIPT_DIR/merge_detection_labels.sh" \
+    bash merge_detection_labels.sh \
         --output-csv "$DETECTIONS_CSV" \
         --class-map-csv "$CLASS_MAP_CSV" \
         --class-yaml "$CLASS_YAML" \
@@ -128,7 +123,7 @@ if [[ "$MERGE_LABELS" == "1" ]]; then
         "${LABEL_DIRS[@]}"
 elif [[ ! -f "$CLASS_MAP_CSV" ]]; then
     echo "[INFO] Class map CSV not found; creating it from CLASS_YAML."
-    python "$SCRIPT_DIR/build_class_map.py" \
+    python build_class_map.py \
         --class-yaml "$CLASS_YAML" \
         --class-map-csv "$CLASS_MAP_CSV"
 else

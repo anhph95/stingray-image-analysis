@@ -13,8 +13,6 @@
 # Run Ultralytics YOLO prediction as a Slurm array.
 ###############################################################################
 
-SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-
 # LOGGING JOB DETAILS
 
 echo "Job ID: $SLURM_JOB_ID, JobName: $SLURM_JOB_NAME"
@@ -31,9 +29,6 @@ CONFIG_PATH="${1:-}"
 if [[ -z "$CONFIG_PATH" ]]; then
     echo "[ERROR] Provide a cruise configuration file." >&2
     exit 2
-fi
-if [[ "$CONFIG_PATH" != /* ]]; then
-    CONFIG_PATH="$SCRIPT_DIR/$CONFIG_PATH"
 fi
 if [[ ! -f "$CONFIG_PATH" ]]; then
     echo "[ERROR] Configuration does not exist: $CONFIG_PATH" >&2
@@ -131,7 +126,7 @@ BATCH_SOURCE_LIST="$PREDICTION_WORK_DIR/source_${BATCH_LABEL}.txt"
 STATUS_FILTER=$(IFS=,; echo "${PREDICTION_VIDEO_STATUSES[*]}")
 
 read -r ELIGIBLE_COUNT SELECTED_COUNT < <(
-    python "$SCRIPT_DIR/select_video_batch.py" \
+    python select_video_batch.py \
         --video-list "$VIDEO_LIST_CSV" \
         --batch-id "$BATCH_ID" \
         --batch-size "$PREDICTION_BATCH_SIZE" \

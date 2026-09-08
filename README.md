@@ -75,6 +75,10 @@ The same config then contains one section for each cruise job. Set its
 `ENABLE_*` switch to `0` when that job should exit without processing. Passing
 the same config to different jobs does not make them run each other's steps.
 
+Run every Bash and Slurm command below from the repository root. The runners do
+not change directories; relative config, environment, and helper paths resolve
+from the directory where `bash` or `sbatch` is invoked.
+
 Before submitting any Slurm job, create the log directory from the repository
 root. Slurm opens its output files before the job script starts:
 

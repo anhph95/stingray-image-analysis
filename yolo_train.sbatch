@@ -12,8 +12,6 @@
 # Run Ultralytics YOLO training as one Slurm job.
 ###############################################################################
 
-SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-
 # LOGGING JOB DETAILS
 
 echo "Job ID: $SLURM_JOB_ID, JobName: $SLURM_JOB_NAME"
@@ -30,9 +28,6 @@ CONFIG_PATH="${1:-}"
 if [[ -z "$CONFIG_PATH" ]]; then
     echo "[ERROR] Provide a training configuration file." >&2
     exit 2
-fi
-if [[ "$CONFIG_PATH" != /* ]]; then
-    CONFIG_PATH="$SCRIPT_DIR/$CONFIG_PATH"
 fi
 if [[ ! -f "$CONFIG_PATH" ]]; then
     echo "[ERROR] Configuration does not exist: $CONFIG_PATH" >&2

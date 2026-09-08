@@ -14,7 +14,7 @@ RUN_NAME="${CRUISE_DATE}_${CRUISE}"
 # timestamp, inference, and abundance resolve the same artifacts.
 TIMESTAMP_MODE="fast"
 
-CVISION_ENV="$SCRIPT_DIR/.venv/cvision"
+CVISION_ENV=".venv/cvision"
 MODEL_ENV="$CVISION_ENV"
 
 VIDEO_DATA_ROOT="CHANGEME_VIDEO_DATA_ROOT"
