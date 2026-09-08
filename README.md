@@ -47,16 +47,21 @@ boundary.
   map without embedding Python inside a shell runner.
 - `select_video_batch.py` safely filters and slices timestamp video-list CSVs
   for direct or Slurm-array inference.
-- `run_local.sh` builds optional media CSV, merges labels, and computes
+- `image_abundance.sh` builds optional media CSV, merges labels, and computes
   abundance on a local machine or HPC node.
-- `run_slurm.sbatch` builds optional media CSV, merges labels, and computes
+- `image_abundance.sbatch` builds optional media CSV, merges labels, and computes
   abundance as one Slurm job.
-- `run_frame_timestamps_local.sh` builds only the media/frame timestamp CSV.
-- `run_frame_timestamps_slurm.sbatch` builds only the media/frame timestamp CSV
+- `frame_timestamps.sh` builds only the media/frame timestamp CSV directly.
+- `frame_timestamps.sbatch` builds only the media/frame timestamp CSV
   as one Slurm job.
-- `run_yolo.sh` runs native Ultralytics training and/or inference from one
-  editable configuration block. It can be called directly or by a scheduler.
-- `run_yolo_slurm.sbatch` supplies Slurm resources and calls `run_yolo.sh`.
+- `yolo_train.sh` runs native Ultralytics training directly or from a
+  Prefect shell task.
+- `yolo_train.sbatch` contains the same training pipeline with Slurm
+  resources and module setup.
+- `yolo_predict.sh` runs native Ultralytics prediction directly or
+  from a Prefect shell task.
+- `yolo_predict.sbatch` contains the same prediction pipeline with a
+  Slurm GPU array configuration.
 
 ## Environment
 
@@ -67,20 +72,20 @@ Ultralytics supplies the initial YOLO training and inference commands. Future
 model runners can use the same environment when their dependencies are
 compatible.
 
-## YOLO Training and Inference
+## YOLO Training
 
-Copy `run_yolo.sh` for a specific analysis run and edit its configuration block.
-Use `RUN_TRAINING` and `RUN_INFERENCE` to run either step independently or to
-run both in sequence. All entries in `TRAIN_ARGS` and `INFERENCE_ARGS` are
-passed unchanged after `yolo`. Settings omitted from those arrays remain native
-Ultralytics defaults and are not added to the command log.
+Copy the local or Slurm training runner for a specific analysis and edit its
+configuration block. Both files contain the complete training pipeline; the
+Slurm file adds only scheduler resources, job logging, and module setup. Every
+entry in `TRAIN_ARGS` is passed unchanged after `yolo`, and omitted settings
+remain native Ultralytics defaults.
 
 The included training values reproduce the working command:
 
 ```bash
 yolo mode=train \
   model=yolov8x \
-  data=/srv/omics/sosik/yolozone/training_data/data.yaml \
+  data=/proj/omics/sosik/yolozone/training_data/data.yaml \
   epochs=200 \
   imgsz=1280 \
   batch=16 \
@@ -88,71 +93,75 @@ yolo mode=train \
   agnostic_nms=true
 ```
 
-Before inference, the script uses the `_video_list_` CSV written by `stingray
-images frame-timestamp`. The fast timestamp mode is the normal choice; detailed
-mode remains available when every frame must be inspected. The included
-inference values reflect the updated run parameters. Each parallel batch uses
-`batch=64` and logical `device=0`; Slurm assigns one physical GPU to each array
-task.
+Run training directly or submit it to Slurm with enough GPUs for the explicit
+device list:
+
+```bash
+bash yolo_train.sh
+mkdir -p slogs
+sbatch yolo_train.sbatch
+```
+
+## YOLO Prediction
+
+Copy the local or Slurm prediction runner for a specific analysis and edit its
+configuration block. Both files contain the complete prediction pipeline; the
+Slurm file adds scheduler resources, job logging, module setup, and its array
+task ID. Every entry in `PREDICTION_ARGS` is passed unchanged after `yolo`.
+
+Before prediction, the runner uses the `_video_list_` CSV written by `stingray
+images frame-timestamp`. Fast timestamp mode is the normal choice; detailed
+mode remains available when every frame must be inspected. Each parallel batch
+uses `batch=64` and logical `device=0`; Slurm assigns one physical GPU to each
+array task.
 
 Set `BUILD_VIDEO_LIST=1` when the runner should invoke the fast StingrayTools
 timestamp command before inference. Set `VIDEO_LIST_CSV` to the exact output
 file expected from the configured cruise and media filenames. Leave the switch
 disabled to reuse a previously generated inventory.
 
-Keep `save_txt=True` and `save_conf=True` when the results will feed
+Keep `save_txt=True` and `save_conf=True` when results will feed
 `merge_detection_labels.sh`. Ultralytics then produces the six-column detection
 rows expected by the existing label merger.
 
-Run the configured workflow directly with:
+Run all eligible videos directly with:
 
 ```bash
-bash run_yolo.sh
+bash yolo_predict.sh
 ```
 
-A direct run defaults to `BATCH_ID=all`. A scheduler can set a numeric
-`BATCH_ID` to select `BATCH_SIZE` eligible rows from the same immutable video
-list. Successful batches receive independent output directories and completion
-markers.
+A direct run defaults to `BATCH_ID=all`; set a numeric `BATCH_ID` to run one
+`BATCH_SIZE` slice. Successful batches receive independent output directories
+and completion markers.
 
 The log includes the configured computer-vision environment, installed YOLO
 version, enabled steps, number of selected videos, and each complete command.
 It does not enumerate settings that Ultralytics supplies by default.
 
-## YOLO with Slurm
-
-For inference arrays, set `RUN_TRAINING=0` in `run_yolo.sh`. Each array element
-requests one GPU, while the percentage suffix limits total concurrent GPUs.
-For example, 100 batches using at most three GPUs are submitted with
-`--array=0-99%3`.
+For Slurm prediction, each array element requests one GPU while the percentage
+suffix limits concurrent GPUs. For example, submit 100 batches using at most
+three GPUs with `--array=0-99%3`.
 
 The Slurm adapter loads `miniconda/25.9` when the Environment Modules command is
-available. Set `MINICONDA_MODULE` to another module name when needed. Direct and
-Prefect execution call `run_yolo.sh` without loading an HPC module.
+available. Set `MINICONDA_MODULE` to another module name when needed. The local
+runners do not load HPC modules and can be invoked by Prefect.
 
 Create the log directory before submitting because Slurm opens output files
 before the job script begins:
 
 ```bash
 mkdir -p slogs
-sbatch --array=0-99%3 run_yolo_slurm.sbatch
-```
-
-Run training separately with `RUN_INFERENCE=0`, one array element, and enough
-GPUs for the explicit training device list. For the included `device=0,1`
-setting:
-
-```bash
-sbatch --array=0-0 --gres=gpu:2 run_yolo_slurm.sbatch
+sbatch --array=0-99%3 yolo_predict.sbatch
 ```
 
 ## YOLO with Prefect
 
-No Prefect-specific flow is included. A Prefect shell task can invoke the same
-configured workflow used locally and by Slurm:
+No Prefect-specific flow is included. Prefect shell tasks can invoke the local
+training or prediction pipelines:
 
 ```bash
-bash /path/to/stingray-image-analysis/run_yolo.sh
+bash /path/to/stingray-image-analysis/yolo_train.sh
+bash /path/to/stingray-image-analysis/yolo_predict.sh
 ```
 
 Prefect captures the script's standard output and error, including the YOLO
@@ -202,31 +211,31 @@ computing abundance.
 
 ## Local Run
 
-Edit the configuration block in `run_local.sh`, then run:
+Edit the configuration block in `image_abundance.sh`, then run:
 
 ```bash
-bash run_local.sh
+bash image_abundance.sh
 ```
 
 For media CSV generation only:
 
 ```bash
-bash run_frame_timestamps_local.sh
+bash frame_timestamps.sh
 ```
 
 ## Slurm Run
 
-Edit the configuration block and `#SBATCH` resources in `run_slurm.sbatch`,
+Edit the configuration block and `#SBATCH` resources in `image_abundance.sbatch`,
 then submit:
 
 ```bash
-sbatch run_slurm.sbatch
+sbatch image_abundance.sbatch
 ```
 
 For media CSV generation only:
 
 ```bash
-sbatch run_frame_timestamps_slurm.sbatch
+sbatch frame_timestamps.sbatch
 ```
 
 ## Command Steps
