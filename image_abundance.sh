@@ -59,23 +59,6 @@ require_switch() {
     fi
 }
 
-echo "[INFO] Run inputs:"
-echo "  CONFIG_PATH=$CONFIG_PATH"
-echo "  CRUISE=$CRUISE"
-echo "  STINGRAY_DATA_ROOT=$STINGRAY_DATA_ROOT"
-echo "  CLASS_YAML=$CLASS_YAML"
-echo "  SENSOR_CSV=$SENSOR_CSV"
-echo "  FRAME_LIST_CSV=$FRAME_LIST_CSV"
-echo "  DETECTIONS_CSV=$DETECTIONS_CSV"
-echo "  CLASS_MAP_CSV=$CLASS_MAP_CSV"
-echo "  ABUNDANCE_OUT_CSV=$ABUNDANCE_OUT_CSV"
-echo "  MERGE_LABELS=$MERGE_LABELS"
-echo "  SCORE_THRESH=$SCORE_THRESH"
-echo "  BIN_WIDTH=$BIN_WIDTH"
-echo "  VOLUME_PER_FRAME=$VOLUME_PER_FRAME"
-echo "  ADD_CI=$ADD_CI"
-echo "  LABEL_DIRS=${LABEL_DIRS[*]}"
-
 require_switch "ENABLE_ABUNDANCE" "$ENABLE_ABUNDANCE"
 require_switch "MERGE_LABELS" "$MERGE_LABELS"
 require_switch "ADD_CI" "$ADD_CI"
@@ -105,18 +88,11 @@ else
     require_file "DETECTIONS_CSV" "$DETECTIONS_CSV"
 fi
 
-JOB_TMP="${TMPDIR:-/tmp}"
 JOBS="${JOBS:-$(nproc)}"
 
-echo "[INFO] Workflow directory: $SCRIPT_DIR"
-echo "[INFO] Temporary directory: $JOB_TMP"
-echo "[INFO] Virtual environment: $CVISION_ENV"
-
+echo "[INFO] Configuration: $CONFIG_PATH"
+echo "[INFO] Environment: $CVISION_ENV"
 source "$CVISION_ENV/bin/activate"
-
-echo "[INFO] Python executable: $(command -v python)"
-python --version
-python -m pip show stingraytools
 
 mkdir -p "$(dirname "$DETECTIONS_CSV")" "$(dirname "$CLASS_MAP_CSV")" "$(dirname "$ABUNDANCE_OUT_CSV")"
 

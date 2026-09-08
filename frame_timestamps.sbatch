@@ -13,17 +13,19 @@
 # Build the media/frame timestamp CSV needed by abundance.
 ###############################################################################
 
-set -euo pipefail
-
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
+# LOGGING JOB DETAILS
+
 echo "Job ID: $SLURM_JOB_ID, JobName: $SLURM_JOB_NAME"
-hostname
-pwd
-date
+hostname; pwd; date
+
+# Environment Setup
+
 module purge
 module load miniconda/25.9
-set -x
+
+set -eux
 
 CONFIG_PATH="${1:-}"
 if [[ -z "$CONFIG_PATH" ]]; then
@@ -87,35 +89,17 @@ if [[ "$TIMESTAMP_MODE" != "fast" && "$TIMESTAMP_MODE" != "details" ]]; then
     exit 2
 fi
 
-echo "[INFO] Run inputs:"
-echo "  CONFIG_PATH=$CONFIG_PATH"
-echo "  STINGRAY_DATA_ROOT=$STINGRAY_DATA_ROOT"
-echo "  CRUISE=$CRUISE"
-echo "  VIDEO_INPUT_DIR=$VIDEO_INPUT_DIR"
-echo "  MEDIA_LIST_DIR=$MEDIA_LIST_DIR"
-echo "  TIMESTAMP_MODE=$TIMESTAMP_MODE"
-echo "  TIMESTAMP_FILE_LIMIT=$TIMESTAMP_FILE_LIMIT"
-echo "  TIMESTAMP_SUFFIXES=${TIMESTAMP_SUFFIXES[*]}"
-
 require_dir "STINGRAY_DATA_ROOT" "$STINGRAY_DATA_ROOT"
 require_dir "VIDEO_INPUT_DIR" "$VIDEO_INPUT_DIR"
 require_value "MEDIA_LIST_DIR" "$MEDIA_LIST_DIR"
 require_value "CRUISE" "$CRUISE"
 
-JOB_TMP="${SLURM_TMPDIR:-${TMPDIR:-/tmp}}"
 MAX_WORKERS="${TIMESTAMP_MAX_WORKERS:-${SLURM_CPUS_PER_TASK:-$(nproc)}}"
 
-mkdir -p slogs
-
-echo "[INFO] Temporary directory: $JOB_TMP"
-echo "[INFO] Virtual environment: $CVISION_ENV"
-
+echo "[INFO] Configuration: $CONFIG_PATH"
+echo "[INFO] Environment: $CVISION_ENV"
 source "$CVISION_ENV/bin/activate"
 echo "Environment loaded"
-
-echo "[INFO] Python executable: $(command -v python)"
-python --version
-python -m pip show stingraytools
 
 FRAME_ARGS=(
     --work-dir "$STINGRAY_DATA_ROOT"

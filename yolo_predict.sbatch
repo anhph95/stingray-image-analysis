@@ -13,17 +13,19 @@
 # Run Ultralytics YOLO prediction as a Slurm array.
 ###############################################################################
 
-set -euo pipefail
-
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
-echo "Job ID: ${SLURM_JOB_ID:-not-set}, JobName: ${SLURM_JOB_NAME:-yolo_predict}"
-hostname
-pwd
-date
+# LOGGING JOB DETAILS
+
+echo "Job ID: $SLURM_JOB_ID, JobName: $SLURM_JOB_NAME"
+hostname; pwd; date
+
+# Environment Setup
 
 module purge
 module load miniconda/25.9
+
+set -eux
 
 CONFIG_PATH="${1:-}"
 if [[ -z "$CONFIG_PATH" ]]; then
@@ -71,12 +73,6 @@ require_arguments_configured() {
     done
 }
 
-log_command() {
-    printf '[INFO] Command:'
-    printf ' %q' "$@"
-    printf '\n'
-}
-
 require_switch "ENABLE_PREDICTION" "$ENABLE_PREDICTION"
 if [[ "$ENABLE_PREDICTION" == "0" ]]; then
     echo "[INFO] Model prediction is disabled by: $CONFIG_PATH"
@@ -106,11 +102,8 @@ if ! command -v python >/dev/null 2>&1; then
     exit 2
 fi
 
-echo "[INFO] Workflow directory: $SCRIPT_DIR"
 echo "[INFO] Configuration: $CONFIG_PATH"
-echo "[INFO] Model environment: $MODEL_ENV"
-echo "[INFO] YOLO executable: $(command -v yolo)"
-echo "[INFO] YOLO version: $(yolo version)"
+echo "[INFO] Environment: $MODEL_ENV"
 
 mkdir -p "$PREDICTION_WORK_DIR" "$PREDICTION_PROJECT"
 
@@ -170,7 +163,6 @@ PREDICTION_COMMAND=(
     "name=$BATCH_NAME"
 )
 echo "[INFO] Starting YOLO prediction."
-log_command "${PREDICTION_COMMAND[@]}"
 "${PREDICTION_COMMAND[@]}"
 mkdir -p "$RUN_DIR"
 touch "$SUCCESS_MARKER"

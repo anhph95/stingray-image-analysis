@@ -70,32 +70,16 @@ if [[ "$TIMESTAMP_MODE" != "fast" && "$TIMESTAMP_MODE" != "details" ]]; then
     exit 2
 fi
 
-echo "[INFO] Run inputs:"
-echo "  CONFIG_PATH=$CONFIG_PATH"
-echo "  STINGRAY_DATA_ROOT=$STINGRAY_DATA_ROOT"
-echo "  CRUISE=$CRUISE"
-echo "  VIDEO_INPUT_DIR=$VIDEO_INPUT_DIR"
-echo "  MEDIA_LIST_DIR=$MEDIA_LIST_DIR"
-echo "  TIMESTAMP_MODE=$TIMESTAMP_MODE"
-echo "  TIMESTAMP_FILE_LIMIT=$TIMESTAMP_FILE_LIMIT"
-echo "  TIMESTAMP_SUFFIXES=${TIMESTAMP_SUFFIXES[*]}"
-
 require_dir "STINGRAY_DATA_ROOT" "$STINGRAY_DATA_ROOT"
 require_dir "VIDEO_INPUT_DIR" "$VIDEO_INPUT_DIR"
 require_value "MEDIA_LIST_DIR" "$MEDIA_LIST_DIR"
 require_value "CRUISE" "$CRUISE"
 
-JOB_TMP="${TMPDIR:-/tmp}"
 MAX_WORKERS="${TIMESTAMP_MAX_WORKERS:-$(nproc)}"
 
-echo "[INFO] Temporary directory: $JOB_TMP"
-echo "[INFO] Virtual environment: $CVISION_ENV"
-
+echo "[INFO] Configuration: $CONFIG_PATH"
+echo "[INFO] Environment: $CVISION_ENV"
 source "$CVISION_ENV/bin/activate"
-
-echo "[INFO] Python executable: $(command -v python)"
-python --version
-python -m pip show stingraytools
 
 FRAME_ARGS=(
     --work-dir "$STINGRAY_DATA_ROOT"

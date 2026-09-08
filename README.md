@@ -1,102 +1,65 @@
-# Stingray Image Analysis Workflow
+# Stingray Image Analysis
 
-This workflow merges ML detection labels, builds optional media/frame timestamp
-CSVs, and computes time-binned shadowgraph abundance from existing Stingray
-sensor data. The included merge helper reads space-separated `.txt` label
-files; other ML pipelines can provide the same detection and class-map tables
-directly.
+This repository provides independent Bash and Slurm jobs for video timestamp
+generation, model inference, image abundance, and model training. Cruise jobs
+share one configuration so that every job resolves the same inputs and output
+artifacts without repeating path settings.
 
-The repository also contains standalone YOLO training and inference runners
-that can be invoked directly or by Slurm and Prefect. They invoke the native
-Ultralytics CLI and do not replace its configuration, training, prediction,
-checkpointing, validation, or resume behavior.
+## Environment Setup
 
-## Setup
+Run the local setup inside WSL2. Using WSL2 gives the virtual environment the
+Linux layout expected by the Bash runners and by the cluster environment.
 
-Inside WSL2, clone the workflow repository and create the shared
-computer-vision environment with the default WSL2 Python:
+Clone the repository and create the `cvision` environment with the default
+WSL2 Python:
 
 ```bash
 git clone https://github.com/anhph95/stingray-image-analysis.git
 cd stingray-image-analysis
-
 python3 -m venv .venv/cvision
 source .venv/cvision/bin/activate
 python --version
 python -m pip install --upgrade pip setuptools wheel
+```
+
+Install the lightweight image-processing dependencies. These are sufficient
+for timestamp generation, detection-label merging, and abundance:
+
+```bash
 python -m pip install --upgrade "stingraytools[images] @ git+https://github.com/anhph95/stingraytools.git"
 ```
 
-This lightweight installation supports timestamp generation, label merging,
-and abundance processing. The environment has the Linux layout expected by the
-Bash and Slurm runners. The `.venv` directory is ignored by Git and must not be
-committed.
-
-Install Ultralytics separately only when this environment will run YOLO
-training or prediction:
+Install Ultralytics separately when this environment will run YOLO inference
+or training:
 
 ```bash
-source .venv/cvision/bin/activate
 python -m pip install --upgrade ultralytics
 ```
 
-Other model frameworks can be installed in the same environment only when
-their runners require them.
+The `.venv` directory is ignored by Git and must not be committed. The generic
+name `cvision` allows the environment to support model frameworks other than
+YOLO when their runners are added.
 
-Pull the repositories and refresh the package installation when workflow files,
-StingrayTools, or model dependencies should be updated. The environment is
-named `cvision` because the workflow can support multiple computer-vision model
-families; Ultralytics YOLO is the first configured runner, not an environment
-boundary.
-
-## Files
-
-- `merge_detection_labels.sh` scans label directories and writes one detection
-  table plus one class-map table.
-- `build_class_map.py` parses model class names and writes the canonical class
-  map without embedding Python inside a shell runner.
-- `select_video_batch.py` safely filters and slices timestamp video-list CSVs
-  for direct or Slurm-array inference.
-- `configs/cruise.example.conf.sh` defines one cruise and derives consistent
-  timestamp, prediction, detection, and abundance paths.
-- `configs/yolo_train.example.conf.sh` contains model-training settings that do
-  not belong to a cruise-processing run.
-- `image_abundance.sh` consumes the completed frame list and detection results,
-  then merges labels and computes abundance directly.
-- `image_abundance.sbatch` contains the same abundance pipeline for Slurm.
-- `frame_timestamps.sh` scans the videos and builds the shared video and frame
-  lists directly.
-- `frame_timestamps.sbatch` builds the same two shared lists as one Slurm job.
-- `yolo_train.sh` runs native Ultralytics training directly or from a
-  Prefect shell task.
-- `yolo_train.sbatch` contains the same training pipeline with Slurm
-  resources and module setup.
-- `yolo_predict.sh` runs native Ultralytics prediction directly or
-  from a Prefect shell task.
-- `yolo_predict.sbatch` contains the same prediction pipeline with a
-  Slurm GPU array configuration.
-
-## Environment
-
-The workflow uses `.venv/cvision` for media timestamps, label merging,
-abundance, and model execution. The `stingraytools[images]` dependency set
-includes OpenCV and the scientific dependencies used by image processing;
-Ultralytics supplies the initial YOLO training and inference commands. Future
-model runners can use the same environment when their dependencies are
-compatible.
+Every Slurm runner loads `miniconda/25.9` and then activates the configured
+virtual environment. The fixed module version prevents a different cluster
+Python from being selected for an existing environment. If the cluster module
+changes, update all `.sbatch` runners together and rebuild the environment with
+the new Python version.
 
 ## Cruise Configuration
 
-Copy the cruise template once for each cruise and edit only the copied config:
+Create one configuration for a cruise:
 
 ```bash
 cp configs/cruise.example.conf.sh configs/my_cruise.conf.sh
 ```
 
-The first section contains the cruise values and artifact paths shared by all
-three flows. `RUN_NAME` is always `CRUISE_DATE_CRUISE`; `CRUISE_DATE` must match
-the date parsed from the media filenames. Directory roots are configured once,
-then all operational paths are derived consistently:
+Edit every `CHANGEME_*` value in the copied file. The shared section defines the
+cruise identity, environment, directory roots, and derived artifact paths.
+`CRUISE_DATE` must use `YYYYMMDD` and match the date parsed from the video
+filenames.
+
+The shared artifacts are derived consistently:
 
 ```text
 VIDEO_INPUT_DIR      VIDEO_DATA_ROOT/CRUISE_COLLECTION_CRUISE/CAMERA_STREAM
@@ -108,171 +71,166 @@ CLASS_MAP_CSV        ANALYSIS_WORK_DIR/RUN_NAME_class_map.csv
 ABUNDANCE_OUT_CSV    .../ABUNDANCE_DATASET/RUN_NAME.csv
 ```
 
-The remaining config sections correspond directly to timestamp, inference, and
-abundance. Set that section's `ENABLE_*` value to `0` when a flow should be
-skipped. Every direct and Slurm runner accepts this same cruise config as its
-first argument.
+The same config then contains one section for each cruise job. Set its
+`ENABLE_*` switch to `0` when that job should exit without processing. Passing
+the same config to different jobs does not make them run each other's steps.
 
-The timestamp flow creates both shared list artifacts. Inference reads
-`VIDEO_LIST_CSV`; abundance reads `FRAME_LIST_CSV`. These are handoffs between
-flows: neither inference nor abundance scans videos or regenerates timestamps.
+Before submitting any Slurm job, create the log directory from the repository
+root. Slurm opens its output files before the job script starts:
 
-## Run the Three Flows
+```bash
+mkdir -p slogs
+```
 
-After editing the cruise config, run the enabled flows in order. The direct
-runners work in WSL2 and can also be invoked by Prefect:
+## Available Jobs
+
+### Frame Timestamps
+
+This job scans `VIDEO_INPUT_DIR` once and creates both shared artifacts:
+
+- `VIDEO_LIST_CSV` contains the video inventory used by inference.
+- `FRAME_LIST_CSV` contains frame times used by abundance.
+
+Configure `ENABLE_TIMESTAMPS`, `TIMESTAMP_MODE`, `TIMESTAMP_FILE_LIMIT`,
+`TIMESTAMP_MAX_WORKERS`, and `TIMESTAMP_SUFFIXES`. Use `TIMESTAMP_MODE="fast"`
+for the fast StingrayTools implementation or `"details"` when detailed
+per-frame inspection is required.
+
+Run directly in WSL2 or from a Prefect shell task:
 
 ```bash
 bash frame_timestamps.sh configs/my_cruise.conf.sh
+```
+
+Submit the same job to Slurm:
+
+```bash
+sbatch frame_timestamps.sbatch configs/my_cruise.conf.sh
+```
+
+Capture the Slurm job ID when a later inference submission should wait for the
+two lists:
+
+```bash
+TIMESTAMP_JOB=$(sbatch --parsable frame_timestamps.sbatch configs/my_cruise.conf.sh)
+```
+
+### YOLO Inference
+
+This job reads `VIDEO_LIST_CSV`, selects eligible videos, and writes prediction
+batches below `PREDICTION_PROJECT`. It does not scan videos or create frame
+timestamps.
+
+Configure `ENABLE_PREDICTION`, `MODEL_WEIGHTS_PATH`, `PREDICTION_BATCH_SIZE`,
+`PREDICTION_VIDEO_STATUSES`, and `PREDICTION_ARGS`. Keep `save_txt=True` and
+`save_conf=True` when the predictions will be used by the abundance job.
+
+Run all eligible videos directly:
+
+```bash
 bash yolo_predict.sh configs/my_cruise.conf.sh
+```
+
+Run only one zero-based batch directly by setting `BATCH_ID`:
+
+```bash
+BATCH_ID=0 bash yolo_predict.sh configs/my_cruise.conf.sh
+```
+
+For Slurm, the required number of array elements is:
+
+```text
+number of batches = ceil(eligible videos / PREDICTION_BATCH_SIZE)
+last array index  = number of batches - 1
+```
+
+For example, `--array=0-99%3` runs 100 batches and allows at most three array
+elements to use GPUs concurrently:
+
+```bash
+sbatch --array=0-99%3 yolo_predict.sbatch configs/my_cruise.conf.sh
+```
+
+If timestamp generation was just submitted, make inference wait for it and
+capture the prediction-array job ID:
+
+```bash
+PREDICTION_JOB=$(sbatch --parsable --dependency="afterok:$TIMESTAMP_JOB" --array=0-99%3 yolo_predict.sbatch configs/my_cruise.conf.sh)
+```
+
+A successful batch writes an independent output directory and `_SUCCESS`
+marker. Rerunning the same batch skips it when that marker already exists.
+
+### Image Abundance
+
+This job reads the existing `FRAME_LIST_CSV`, prediction labels, class names,
+and `SENSOR_CSV`, then writes `ABUNDANCE_OUT_CSV`. It does not scan videos,
+create a video list, or regenerate frame timestamps.
+
+Configure `ENABLE_ABUNDANCE`, `CLASS_YAML`, `MERGE_LABELS`, `LABEL_DIRS`,
+`SCORE_THRESH`, `BIN_WIDTH`, `VOLUME_PER_FRAME`, and `ADD_CI`.
+
+When `MERGE_LABELS="1"`, the job consolidates the prediction `.txt` files into
+`DETECTIONS_CSV` and creates `CLASS_MAP_CSV`. When `MERGE_LABELS="0"`, it uses
+the existing detection table and creates only a missing class map from
+`CLASS_YAML`.
+
+Run directly in WSL2 or from a Prefect shell task:
+
+```bash
 bash image_abundance.sh configs/my_cruise.conf.sh
 ```
 
-The first command writes `VIDEO_LIST_CSV` and `FRAME_LIST_CSV`. The second reads
-the video list and writes model predictions. The third reads the frame list,
-the predictions, and `SENSOR_CSV`, then writes `ABUNDANCE_OUT_CSV`.
-
-For Slurm, create the log directory once and submit the same three flows with
-dependencies. `afterok` prevents a downstream flow from starting unless its
-upstream job completed successfully:
+Submit directly to Slurm when its required inputs already exist:
 
 ```bash
-mkdir -p slogs
-TIMESTAMP_JOB=$(sbatch --parsable frame_timestamps.sbatch configs/my_cruise.conf.sh)
-PREDICTION_JOB=$(sbatch --parsable --dependency="afterok:$TIMESTAMP_JOB" --array=0-99%3 yolo_predict.sbatch configs/my_cruise.conf.sh)
+sbatch image_abundance.sbatch configs/my_cruise.conf.sh
+```
+
+If inference was submitted as an array, make abundance wait until every array
+element succeeds:
+
+```bash
 sbatch --dependency="afterok:$PREDICTION_JOB" image_abundance.sbatch configs/my_cruise.conf.sh
 ```
 
-Adjust `--array=0-99%3` to match the required number of prediction batches and
-the allowed GPU concurrency. A dependency on the prediction array waits for all
-array elements before abundance begins.
+The abundance calculation aligns detections to frame times, bins them with
+width `BIN_WIDTH`, filters detections below `SCORE_THRESH`, and converts counts
+to concentration using `VOLUME_PER_FRAME`.
 
-## YOLO Training
+### YOLO Training
 
-Copy `configs/yolo_train.example.conf.sh` for a training run and edit the copied
-configuration. Both training runners consume that file; the Slurm runner adds
-only scheduler resources, job logging, and module setup. Every entry in
-`TRAIN_ARGS` is passed unchanged after `yolo`, and omitted settings remain
-native Ultralytics defaults.
-
-The included training values reproduce the working command:
+Training is independent of cruise processing and uses its own configuration.
+Create that config and edit its model, dataset, device, and training arguments:
 
 ```bash
-yolo mode=train \
-  model=yolov8x \
-  data=/proj/omics/sosik/yolozone/training_data/data.yaml \
-  epochs=200 \
-  imgsz=1280 \
-  batch=16 \
-  device=0,1 \
-  agnostic_nms=true
+cp configs/yolo_train.example.conf.sh configs/my_training.conf.sh
 ```
 
-Run training directly or submit it to Slurm with enough GPUs for the explicit
-device list:
+Run training directly in WSL2 or from a Prefect shell task:
 
 ```bash
 bash yolo_train.sh configs/my_training.conf.sh
-mkdir -p slogs
+```
+
+Submit training to Slurm. The configured `device` list must agree with the GPU
+resources requested in `yolo_train.sbatch`:
+
+```bash
 sbatch yolo_train.sbatch configs/my_training.conf.sh
 ```
 
-## YOLO Prediction
+Arguments in `TRAIN_ARGS` are passed unchanged to the native Ultralytics CLI;
+omitted settings retain their Ultralytics defaults.
 
-Both prediction runners load the same cruise configuration. The Slurm runner
-adds scheduler resources, job logging, module setup, and its array task ID.
-Every entry in `PREDICTION_ARGS` is passed unchanged after `yolo`.
+## Slurm Status and Logs
 
-Before prediction, the runner uses the `_video_list_` CSV written by `stingray
-images frame-timestamp`. Fast timestamp mode is the normal choice; detailed
-mode remains available when every frame must be inspected. Each parallel batch
-uses `batch=64` and logical `device=0`; Slurm assigns one physical GPU to each
-array task.
-
-Keep `save_txt=True` and `save_conf=True` when results will feed
-`merge_detection_labels.sh`. Ultralytics then produces the six-column detection
-rows expected by the existing label merger.
-
-Run all eligible videos directly with:
+Inspect queued and running jobs:
 
 ```bash
-bash yolo_predict.sh configs/my_cruise.conf.sh
+squeue -u "$USER"
 ```
 
-A direct run defaults to `BATCH_ID=all`; set a numeric `BATCH_ID` to run one
-`PREDICTION_BATCH_SIZE` slice. Successful batches receive independent output
-directories and completion markers.
-
-The log includes the configured computer-vision environment, installed YOLO
-version, enabled steps, number of selected videos, and each complete command.
-It does not enumerate settings that Ultralytics supplies by default.
-
-For Slurm prediction, each array element requests one GPU while the percentage
-suffix limits concurrent GPUs. For example, submit 100 batches using at most
-three GPUs with `--array=0-99%3`.
-
-Every Slurm runner explicitly purges loaded modules and loads
-`miniconda/25.9` before activating `.venv/cvision`. Keeping the module version
-fixed makes the jobs reproducible and prevents an automatically selected Python
-version from becoming incompatible with the existing virtual environment. If
-the cluster changes its supported Miniconda module, update the fixed module in
-all Slurm runners and rebuild the environment with that Python version. Local
-runners and the WSL2 setup do not load HPC modules and can be invoked by
-Prefect.
-
-Create `slogs` before submitting because Slurm opens output files before the job
-script begins. The complete dependency-based submission sequence is shown in
-`Run the Three Flows`.
-
-## YOLO with Prefect
-
-No Prefect-specific flow is included. Prefect shell tasks can invoke the local
-training or prediction pipelines:
-
-```bash
-bash /path/to/stingray-image-analysis/yolo_train.sh configs/my_training.conf.sh
-bash /path/to/stingray-image-analysis/yolo_predict.sh configs/my_cruise.conf.sh
-```
-
-Prefect captures the script's standard output and error, including the YOLO
-version and explicit command arguments. The Prefect worker must have access to
-the configured environment, media, model, and output paths.
-
-## Output Names
-
-The derived file naming template is:
-
-```text
-CRUISE_DATE_CRUISE.csv
-CRUISE_DATE_CRUISE_video_list_MODE.csv
-CRUISE_DATE_CRUISE_frame_list_MODE.csv
-CRUISE_DATE_CRUISE_detection_labels.csv
-CRUISE_DATE_CRUISE_class_map.csv
-```
-
-The canonical detection table contains one row per retained model detection:
-
-```text
-media,frame,class_id,confidence
-```
-
-The class map contains one row per model class:
-
-```text
-class_id,class,source_file,source_format
-```
-
-If `MERGE_LABELS="1"`, the runner builds both tables from `LABEL_DIRS` and
-`CLASS_YAML`. If `MERGE_LABELS="0"`, the runner uses an existing detection table.
-When `CLASS_MAP_CSV` is missing, the runner creates it from `CLASS_YAML` before
-computing abundance.
-
-## Command Steps
-
-The workflow runners call these processing steps:
-
-```bash
-stingray images frame-timestamp ...
-bash merge_detection_labels.sh ...
-stingray images abundance ...
-```
+Read standard output and error under `slogs/`. Timestamp, inference, abundance,
+and training use distinct Slurm job names, and inference log names also include
+the array-task ID.

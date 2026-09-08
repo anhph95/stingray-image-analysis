@@ -42,12 +42,6 @@ require_arguments_configured() {
     done
 }
 
-log_command() {
-    printf '[INFO] Command:'
-    printf ' %q' "$@"
-    printf '\n'
-}
-
 if [[ "$ENABLE_TRAINING" != "0" && "$ENABLE_TRAINING" != "1" ]]; then
     echo "[ERROR] ENABLE_TRAINING must be 0 or 1; received: $ENABLE_TRAINING" >&2
     exit 2
@@ -71,15 +65,11 @@ if ! command -v yolo >/dev/null 2>&1; then
     exit 2
 fi
 
-echo "[INFO] Workflow directory: $SCRIPT_DIR"
 echo "[INFO] Configuration: $CONFIG_PATH"
-echo "[INFO] Model environment: $MODEL_ENV"
-echo "[INFO] YOLO executable: $(command -v yolo)"
-echo "[INFO] YOLO version: $(yolo version)"
+echo "[INFO] Environment: $MODEL_ENV"
 
 TRAIN_COMMAND=(yolo "${TRAIN_ARGS[@]}")
 echo "[INFO] Starting YOLO training."
-log_command "${TRAIN_COMMAND[@]}"
 "${TRAIN_COMMAND[@]}"
 
 echo "[DONE] YOLO training completed."

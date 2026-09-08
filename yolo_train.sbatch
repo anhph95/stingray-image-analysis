@@ -12,17 +12,19 @@
 # Run Ultralytics YOLO training as one Slurm job.
 ###############################################################################
 
-set -euo pipefail
-
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
-echo "Job ID: ${SLURM_JOB_ID:-not-set}, JobName: ${SLURM_JOB_NAME:-yolo_train}"
-hostname
-pwd
-date
+# LOGGING JOB DETAILS
+
+echo "Job ID: $SLURM_JOB_ID, JobName: $SLURM_JOB_NAME"
+hostname; pwd; date
+
+# Environment Setup
 
 module purge
 module load miniconda/25.9
+
+set -eux
 
 CONFIG_PATH="${1:-}"
 if [[ -z "$CONFIG_PATH" ]]; then
@@ -59,12 +61,6 @@ require_arguments_configured() {
     done
 }
 
-log_command() {
-    printf '[INFO] Command:'
-    printf ' %q' "$@"
-    printf '\n'
-}
-
 if [[ "$ENABLE_TRAINING" != "0" && "$ENABLE_TRAINING" != "1" ]]; then
     echo "[ERROR] ENABLE_TRAINING must be 0 or 1; received: $ENABLE_TRAINING" >&2
     exit 2
@@ -88,15 +84,11 @@ if ! command -v yolo >/dev/null 2>&1; then
     exit 2
 fi
 
-echo "[INFO] Workflow directory: $SCRIPT_DIR"
 echo "[INFO] Configuration: $CONFIG_PATH"
-echo "[INFO] Model environment: $MODEL_ENV"
-echo "[INFO] YOLO executable: $(command -v yolo)"
-echo "[INFO] YOLO version: $(yolo version)"
+echo "[INFO] Environment: $MODEL_ENV"
 
 TRAIN_COMMAND=(yolo "${TRAIN_ARGS[@]}")
 echo "[INFO] Starting YOLO training."
-log_command "${TRAIN_COMMAND[@]}"
 "${TRAIN_COMMAND[@]}"
 
 echo "[DONE] YOLO training completed."
