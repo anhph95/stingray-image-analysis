@@ -19,6 +19,7 @@ def main() -> None:
     parser.add_argument("--batch-id", required=True)
     parser.add_argument("--batch-size", required=True, type=int)
     parser.add_argument("--statuses", required=True)
+    parser.add_argument("--suffix", required=True)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
 
@@ -32,7 +33,7 @@ def main() -> None:
     eligible = [
         row
         for row in rows
-        if Path(row["media_path"]).suffix.lower() == ".avi"
+        if Path(row["media_path"]).suffix.lower() == args.suffix.lower()
         and row.get("status", "valid") in statuses
     ]
     eligible.sort(key=video_index)

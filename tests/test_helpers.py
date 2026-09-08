@@ -75,6 +75,8 @@ class HelperScriptTests(unittest.TestCase):
                     "1",
                     "--statuses",
                     "valid",
+                    "--suffix",
+                    ".avi",
                     "--output",
                     str(source_list),
                 ],

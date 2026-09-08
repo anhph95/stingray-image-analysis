@@ -7,27 +7,19 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
-###############################################################################
-# Run configuration
-###############################################################################
-
-MODEL_ENV="$SCRIPT_DIR/.venv/cvision"
-
-# Every entry is passed unchanged after `yolo`.
-TRAIN_ARGS=(
-    mode=train
-    model=yolov8x
-    data=/proj/omics/sosik/yolozone/training_data/data.yaml
-    epochs=200
-    imgsz=1280
-    batch=16
-    device=0,1
-    agnostic_nms=true
-)
-
-###############################################################################
-# End configuration
-###############################################################################
+CONFIG_PATH="${1:-}"
+if [[ -z "$CONFIG_PATH" ]]; then
+    echo "[ERROR] Provide a training configuration file." >&2
+    exit 2
+fi
+if [[ "$CONFIG_PATH" != /* ]]; then
+    CONFIG_PATH="$SCRIPT_DIR/$CONFIG_PATH"
+fi
+if [[ ! -f "$CONFIG_PATH" ]]; then
+    echo "[ERROR] Configuration does not exist: $CONFIG_PATH" >&2
+    exit 2
+fi
+source "$CONFIG_PATH"
 
 require_configured() {
     local name="$1"
@@ -56,6 +48,15 @@ log_command() {
     printf '\n'
 }
 
+if [[ "$ENABLE_TRAINING" != "0" && "$ENABLE_TRAINING" != "1" ]]; then
+    echo "[ERROR] ENABLE_TRAINING must be 0 or 1; received: $ENABLE_TRAINING" >&2
+    exit 2
+fi
+if [[ "$ENABLE_TRAINING" == "0" ]]; then
+    echo "[INFO] Model training is disabled by: $CONFIG_PATH"
+    exit 0
+fi
+
 require_configured "MODEL_ENV" "$MODEL_ENV"
 require_arguments_configured "TRAIN_ARGS" "${TRAIN_ARGS[@]}"
 
@@ -71,6 +72,7 @@ if ! command -v yolo >/dev/null 2>&1; then
 fi
 
 echo "[INFO] Workflow directory: $SCRIPT_DIR"
+echo "[INFO] Configuration: $CONFIG_PATH"
 echo "[INFO] Model environment: $MODEL_ENV"
 echo "[INFO] YOLO executable: $(command -v yolo)"
 echo "[INFO] YOLO version: $(yolo version)"
