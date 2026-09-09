@@ -3,7 +3,7 @@
 # Run post-inference image abundance processing on a local machine or HPC node.
 ###############################################################################
 
-set -euo pipefail
+set -euxo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
@@ -11,9 +11,6 @@ CONFIG_PATH="${1:-}"
 if [[ -z "$CONFIG_PATH" ]]; then
     echo "[ERROR] Provide a cruise configuration file." >&2
     exit 2
-fi
-if [[ "$CONFIG_PATH" != /* ]]; then
-    CONFIG_PATH="$SCRIPT_DIR/$CONFIG_PATH"
 fi
 if [[ ! -f "$CONFIG_PATH" ]]; then
     echo "[ERROR] Configuration does not exist: $CONFIG_PATH" >&2
@@ -83,7 +80,22 @@ else
     require_file "DETECTIONS_CSV" "$DETECTIONS_CSV"
 fi
 
-JOBS="${JOBS:-$(nproc)}"
+CPU_COUNT="${STINGRAY_CPU_COUNT:-$(nproc)}"
+if [[ ! "$CPU_COUNT" =~ ^[1-9][0-9]*$ ]]; then
+    echo "[ERROR] Available CPU count must be a positive integer: $CPU_COUNT" >&2
+    exit 2
+fi
+
+WORKER_LIMIT=$((CPU_COUNT > 1 ? CPU_COUNT - 1 : 1))
+JOBS="${JOBS:-$WORKER_LIMIT}"
+if [[ ! "$JOBS" =~ ^[1-9][0-9]*$ ]]; then
+    echo "[ERROR] JOBS must be empty or a positive integer." >&2
+    exit 2
+fi
+if ((JOBS > WORKER_LIMIT)); then
+    echo "[INFO] Limiting label workers from $JOBS to $WORKER_LIMIT for $CPU_COUNT available CPUs."
+    JOBS="$WORKER_LIMIT"
+fi
 
 echo "[INFO] Configuration: $CONFIG_PATH"
 echo "[INFO] Environment: $CVISION_ENV"

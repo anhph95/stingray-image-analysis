@@ -4,17 +4,12 @@
 # local HPC node.
 ###############################################################################
 
-set -euo pipefail
-
-SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+set -euxo pipefail
 
 CONFIG_PATH="${1:-}"
 if [[ -z "$CONFIG_PATH" ]]; then
     echo "[ERROR] Provide a cruise configuration file." >&2
     exit 2
-fi
-if [[ "$CONFIG_PATH" != /* ]]; then
-    CONFIG_PATH="$SCRIPT_DIR/$CONFIG_PATH"
 fi
 if [[ ! -f "$CONFIG_PATH" ]]; then
     echo "[ERROR] Configuration does not exist: $CONFIG_PATH" >&2
@@ -61,7 +56,22 @@ require_dir "VIDEO_INPUT_DIR" "$VIDEO_INPUT_DIR"
 require_value "MEDIA_LIST_DIR" "$MEDIA_LIST_DIR"
 require_value "CRUISE" "$CRUISE"
 
-MAX_WORKERS="${TIMESTAMP_MAX_WORKERS:-$(nproc)}"
+CPU_COUNT="${STINGRAY_CPU_COUNT:-$(nproc)}"
+if [[ ! "$CPU_COUNT" =~ ^[1-9][0-9]*$ ]]; then
+    echo "[ERROR] Available CPU count must be a positive integer: $CPU_COUNT" >&2
+    exit 2
+fi
+
+WORKER_LIMIT=$((CPU_COUNT > 1 ? CPU_COUNT - 1 : 1))
+MAX_WORKERS="${TIMESTAMP_MAX_WORKERS:-$WORKER_LIMIT}"
+if [[ ! "$MAX_WORKERS" =~ ^[1-9][0-9]*$ ]]; then
+    echo "[ERROR] TIMESTAMP_MAX_WORKERS must be empty or a positive integer." >&2
+    exit 2
+fi
+if ((MAX_WORKERS > WORKER_LIMIT)); then
+    echo "[INFO] Limiting timestamp workers from $MAX_WORKERS to $WORKER_LIMIT for $CPU_COUNT available CPUs."
+    MAX_WORKERS="$WORKER_LIMIT"
+fi
 
 echo "[INFO] Configuration: $CONFIG_PATH"
 echo "[INFO] Environment: $CVISION_ENV"

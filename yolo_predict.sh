@@ -3,7 +3,7 @@
 # Run resumable Ultralytics YOLO prediction locally.
 ###############################################################################
 
-set -euo pipefail
+set -euxo pipefail
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
@@ -11,9 +11,6 @@ CONFIG_PATH="${1:-}"
 if [[ -z "$CONFIG_PATH" ]]; then
     echo "[ERROR] Provide a cruise configuration file." >&2
     exit 2
-fi
-if [[ "$CONFIG_PATH" != /* ]]; then
-    CONFIG_PATH="$SCRIPT_DIR/$CONFIG_PATH"
 fi
 if [[ ! -f "$CONFIG_PATH" ]]; then
     echo "[ERROR] Configuration does not exist: $CONFIG_PATH" >&2
@@ -59,7 +56,7 @@ require_file "MODEL_WEIGHTS_PATH" "$MODEL_WEIGHTS_PATH"
 require_file "VIDEO_LIST_CSV" "$VIDEO_LIST_CSV"
 require_arguments_configured "PREDICTION_ARGS" "${PREDICTION_ARGS[@]}"
 
-LOCAL_DEVICES="${LOCAL_PREDICTION_DEVICES:-0}"
+PREDICTION_DEVICES="${STINGRAY_RUN_DEVICES:-${LOCAL_PREDICTION_DEVICES:-0}}"
 FILE_LIMIT="${PREDICTION_FILE_LIMIT:-}"
 if [[ -n "$FILE_LIMIT" && ! "$FILE_LIMIT" =~ ^[1-9][0-9]*$ ]]; then
     echo "[ERROR] PREDICTION_FILE_LIMIT must be empty or a positive integer." >&2
@@ -81,7 +78,7 @@ STATUS_FILTER=$(IFS=,; echo "${PREDICTION_VIDEO_STATUSES[*]}")
 
 echo "[INFO] Configuration: $CONFIG_PATH"
 echo "[INFO] Environment: $MODEL_ENV"
-echo "[INFO] Local devices: $LOCAL_DEVICES"
+echo "[INFO] Prediction devices: $PREDICTION_DEVICES"
 
 PREDICT_COMMAND=(
     python "$SCRIPT_DIR/yolo_predict.py"
@@ -90,8 +87,11 @@ PREDICT_COMMAND=(
     --suffix "$VIDEO_SUFFIX"
     --model "$MODEL_WEIGHTS_PATH"
     --project "$PREDICTION_PROJECT"
-    --devices "$LOCAL_DEVICES"
+    --devices "$PREDICTION_DEVICES"
 )
+if [[ -n "${STINGRAY_RUN_ID:-}" ]]; then
+    PREDICT_COMMAND+=(--run-id "$STINGRAY_RUN_ID")
+fi
 if [[ -n "$FILE_LIMIT" ]]; then
     PREDICT_COMMAND+=(--file-limit "$FILE_LIMIT")
 fi

@@ -1,13 +1,25 @@
 # Stingray Image Analysis
 
-This repository provides independent jobs for frame timestamps, YOLO
-inference, image abundance, and YOLO training. Cruise-processing jobs share one
-config so their input and output paths remain consistent.
+This project converts cruise video into time-resolved biological abundance.
+Four independent jobs are available:
 
-## Setup and Environment
+1. determine the acquisition time of every video frame;
+2. detect and classify organisms with a YOLO model;
+3. convert detections into abundance aligned with the sensor time series; and
+4. train a YOLO model from annotated images.
 
-Run the setup inside WSL2 and create the repository environment with the
-default WSL2 Python:
+The first three jobs share one cruise configuration. Run only the jobs needed
+for a particular dataset, but preserve their order when running the complete
+analysis:
+
+```text
+video -> frame timestamps -> detections -> abundance
+```
+
+## Requirements
+
+Use Linux or WSL2 with Python 3.11 or newer. Run the following commands from
+the directory where you want to keep the project:
 
 ```bash
 git clone https://github.com/anhph95/stingray-image-analysis.git
@@ -18,133 +30,179 @@ python -m pip install --upgrade pip setuptools wheel
 python -m pip install --upgrade pyyaml "stingraytools[images] @ git+https://github.com/anhph95/stingraytools.git"
 ```
 
-The lightweight installation supports timestamps, detection-label merging,
-and abundance. Install Ultralytics only when YOLO inference or training is
-needed:
+YOLO prediction and training additionally require Ultralytics:
 
 ```bash
 source .venv/cvision/bin/activate
 python -m pip install --upgrade ultralytics
 ```
 
-The `.venv` directory is ignored by Git. Slurm runners use the same configured
-environment after `module purge` and `module load miniconda/25.9`.
+On Slurm, create the same environment on a filesystem visible to the compute
+nodes. The supplied jobs load `miniconda/25.9` before activating the configured
+environment.
 
-## Configuration
+## Configure an analysis
 
-Copy `configs/cruise.example.conf.sh` to `configs/my_cruise.conf.sh`, then edit
-the cruise values, directory roots, environment, model, and abundance settings.
-Frame timestamps, inference, and abundance all read this same config.
-
-The timestamp job creates both shared artifacts: `VIDEO_LIST_CSV` for inference
-and `FRAME_LIST_CSV` for abundance. Inference and abundance consume these files
-without rebuilding them. Run only the jobs required for the current workflow.
-
-Abundance intermediate files are written below
-`workspace/abundance/CAMERA_STREAM/` in the repository and are ignored by Git.
-The completed `ABUNDANCE_OUT_CSV` remains in the configured Stingray data
-output directory.
-
-Training is independent of a cruise. Copy
-`configs/yolo_train.example.conf.sh` to `configs/my_training.conf.sh` and edit
-its environment and `TRAIN_ARGS`.
-
-Run every command below from the repository root. The runners do not change
-directories, so relative config, environment, and helper paths resolve from the
-submission directory.
-
-## Bash
-
-Run any required job directly in WSL2:
+Create a cruise configuration:
 
 ```bash
+cp configs/cruise.example.conf.sh configs/my_cruise.conf.sh
+```
+
+Edit `configs/my_cruise.conf.sh` and set:
+
+- cruise identity, date, collection, and camera stream;
+- video and Stingray data directories;
+- sensor dataset and output dataset names;
+- trained model weights and organism class names;
+- timestamp, prediction, and abundance parameters.
+
+The cruise date must match the date encoded in the media filenames. Relative
+configuration, environment, input, workspace, and output paths are evaluated
+from the current working directory. Run all commands from the project root.
+
+Training uses a separate configuration:
+
+```bash
+cp configs/yolo_train.example.conf.sh configs/my_training.conf.sh
+```
+
+Set the training dataset, initial model, image size, batch size, epoch count,
+and device selection in `TRAIN_ARGS`.
+
+## Run locally
+
+Activate the environment and run the required jobs from the project root:
+
+```bash
+source .venv/cvision/bin/activate
 bash frame_timestamps.sh configs/my_cruise.conf.sh
 bash yolo_predict.sh configs/my_cruise.conf.sh
 bash image_abundance.sh configs/my_cruise.conf.sh
+```
+
+Train a model independently when new annotations are available:
+
+```bash
 bash yolo_train.sh configs/my_training.conf.sh
 ```
 
-Inference uses `LOCAL_PREDICTION_DEVICES` from the cruise config and loads the
-model once on each selected device. Set `PREDICTION_FILE_LIMIT=6` to process
-only the first six remaining videos; leave it empty to process all remaining
-videos.
+Timestamp extraction and label conversion use at most one fewer worker than
+the number of visible CPUs:
 
-## Prefect container jobs
+$$
+W = \max(1, N_{\mathrm{CPU}} - 1).
+$$
 
-The timestamp and abundance Prefect flows run the existing shell jobs from the
-lightweight `ghcr.io/anhph95/stingray-image-analysis:latest` container. Deploy
-them with the generic deployment helper in `amplify-prefect`:
+The remaining CPU is available for coordination, logging, and input/output.
+Set `TIMESTAMP_MAX_WORKERS` or `JOBS` to use fewer workers. Prediction loads
+one model on each device listed in `LOCAL_PREDICTION_DEVICES` and distributes
+the remaining videos among those devices.
 
-```bash
-python src/deploy_flow.py https://github.com/anhph95/stingray-image-analysis.git prefect_flows.py:frame_timestamps stingray-frame-timestamps
-python src/deploy_flow.py https://github.com/anhph95/stingray-image-analysis.git prefect_flows.py:image_abundance stingray-image-abundance
-```
+## Run with Slurm
 
-For each run, provide the host `config_path` and every top-level path used by
-that config in `data_roots`, such as `["/proj"]`. Abundance also requires a
-persistent host `workspace_dir`; the flow mounts it as `/app/workspace` inside
-the container.
-
-The container pins StingrayTools to a release tag with `STINGRAYTOOLS_REF` in
-`docker/stingray-image-analysis/Dockerfile`. When StingrayTools is released,
-update that tag and rebuild the image. Existing images remain unchanged.
-
-## Slurm
-
-Create `slogs` before submission because Slurm opens log files before the job
-script starts. Replace `YOUR_EMAIL` in each submitted command; every `.sbatch`
-file already sets `#SBATCH --mail-type=ALL`.
+Create the log directory before submission because Slurm opens the log files
+before the job begins:
 
 ```bash
 mkdir -p slogs
+```
+
+Submit the required jobs from the project root:
+
+```bash
 sbatch --mail-user=YOUR_EMAIL frame_timestamps.sbatch configs/my_cruise.conf.sh
-sbatch --mail-user=YOUR_EMAIL --gres=gpu:3 yolo_predict.sbatch configs/my_cruise.conf.sh
+sbatch --mail-user=YOUR_EMAIL yolo_predict.sbatch configs/my_cruise.conf.sh
 sbatch --mail-user=YOUR_EMAIL image_abundance.sbatch configs/my_cruise.conf.sh
 sbatch --mail-user=YOUR_EMAIL yolo_train.sbatch configs/my_training.conf.sh
 ```
 
-Inference is one multi-GPU job, not a Slurm array. The command above requests
-three GPUs; omit `--gres=gpu:3` to use the script's one-GPU default. Each GPU
-loads the model once and draws videos from the same remaining-work queue.
+The timestamp job receives 12 CPUs by default and uses 11 workers. The
+abundance job receives 32 CPUs by default and uses 31 workers while converting
+detection labels. Slurm enforces the requested CPU, memory, GPU, and wall-time
+limits.
 
-Each job can be submitted independently when its required inputs already
-exist. When jobs are submitted together, use Slurm `afterok` dependencies or an
-external orchestrator so inference waits for timestamps and abundance waits for
-the complete inference job.
+YOLO prediction requests one GPU by default. Request more GPUs when processing
+a large cruise:
 
-## Job Reference
+```bash
+sbatch --mail-user=YOUR_EMAIL --gres=gpu:3 yolo_predict.sbatch configs/my_cruise.conf.sh
+```
 
-### Frame Timestamps
+One model is loaded on each allocated GPU. All GPU workers draw videos from the
+same queue, so each video is processed once. This is one multi-GPU job, not a
+Slurm array.
 
-Scans `VIDEO_INPUT_DIR` and writes `VIDEO_LIST_CSV` and `FRAME_LIST_CSV`.
-Configure `TIMESTAMP_MODE`, file limits, worker count, and video suffixes in the
-timestamp section. Use `fast` normally and `details` when every frame must be
-inspected.
+The jobs may be submitted independently when their required inputs already
+exist. For a complete analysis, wait for timestamps before prediction and wait
+for prediction before abundance. A Slurm dependency sequence can be submitted
+as follows:
 
-### YOLO Inference
+```bash
+timestamp_job=$(sbatch --parsable frame_timestamps.sbatch configs/my_cruise.conf.sh)
+prediction_job=$(sbatch --parsable --dependency=afterok:$timestamp_job yolo_predict.sbatch configs/my_cruise.conf.sh)
+sbatch --dependency=afterok:$prediction_job image_abundance.sbatch configs/my_cruise.conf.sh
+```
 
-Reads eligible videos from `VIDEO_LIST_CSV` and removes videos already marked
-complete. Slurm outputs are organized as
-`PREDICTION_PROJECT/runs/SLURM_JOB_ID/worker_ID/VIDEO_ID`. Every allocated GPU
-loads the model once and processes videos from a shared queue. A video receives
-an `_SUCCESS` marker only after inference completes, so later runs may use a
-different GPU count and automatically process only the remaining videos.
+## Scientific calculations
 
-### Image Abundance
+### Frame timestamps
 
-Reads `FRAME_LIST_CSV`, prediction labels, class names, and `SENSOR_CSV`, then
-writes `ABUNDANCE_OUT_CSV`. It never scans videos or regenerates timestamps.
-When `MERGE_LABELS="1"`, it first builds `DETECTIONS_CSV` and `CLASS_MAP_CSV`
-from outputs registered by per-video `_SUCCESS` markers or the existing
-Prefect `.completed_files.txt` manifest. Partial outputs from failed videos are
-ignored.
+The timestamp job produces a video-level table and a frame-level table. Fast
+mode estimates frame time from the media start time, frame index $i$, and
+measured frame rate $f$:
 
-The abundance calculation filters detections by `SCORE_THRESH`, groups them
-into time bins of width `BIN_WIDTH`, and converts counts to concentration using
-`VOLUME_PER_FRAME`.
+$$
+t_i = t_0 + \frac{i}{f}.
+$$
 
-### YOLO Training
+Use `TIMESTAMP_MODE="fast"` for routine processing. Use
+`TIMESTAMP_MODE="details"` when timestamps must be read for every individual
+frame. Details mode is slower but records unreadable files and frames
+explicitly.
 
-Uses the separate training config and passes `TRAIN_ARGS` unchanged to the
-Ultralytics CLI. The configured device list must agree with the GPU resources
-requested in `yolo_train.sbatch`.
+The resulting `VIDEO_LIST_CSV` controls which videos are eligible for
+prediction. `FRAME_LIST_CSV` provides the time coordinate used for abundance.
+
+### Detection
+
+YOLO predicts organism classes and confidence scores for each frame.
+Detections are stored per video. A video is considered complete only after its
+success marker is written, so interrupted runs can resume without repeating
+completed videos. Outputs from incomplete videos are excluded from abundance.
+
+`PREDICTION_FILE_LIMIT` can restrict a test run to the first specified number
+of remaining videos. Leave it empty to process the full remaining dataset.
+
+### Abundance
+
+Detections with confidence below `SCORE_THRESH` are removed. The retained
+detections are matched to frame times and grouped into intervals of width
+`BIN_WIDTH`.
+
+For class $c$ in time bin $b$, let $k_{i,c}$ be the number of detections in
+frame $i$, let $n_b$ be the number of frames in the bin, and let $V_f$ be the
+sample volume represented by one frame. The reported abundance is
+
+$$
+A_{b,c} = \frac{1}{V_f}\left(\frac{1}{n_b}\sum_{i=1}^{n_b} k_{i,c}\right).
+$$
+
+`VOLUME_PER_FRAME` defines $V_f$. Total abundance is the sum over all classes:
+
+$$
+A_{b,\mathrm{total}} = \sum_c A_{b,c}.
+$$
+
+When `ADD_CI="1"`, Poisson confidence intervals are calculated from the raw
+detection counts. The abundance table is then aligned with `SENSOR_CSV` by
+time and written to `ABUNDANCE_OUT_CSV`.
+
+## Main outputs
+
+- `VIDEO_LIST_CSV`: video metadata, status, timing, frame count, and frame rate.
+- `FRAME_LIST_CSV`: one timestamped record per frame.
+- `PREDICTION_PROJECT`: per-video YOLO detections and completion records.
+- `DETECTIONS_CSV`: combined detection table used for abundance.
+- `CLASS_MAP_CSV`: numerical model classes mapped to scientific class names.
+- `ABUNDANCE_OUT_CSV`: sensor data with class-specific and total abundance.
