@@ -2,10 +2,10 @@
 ###############################################################################
 # Merge space-separated label files into one canonical detection table.
 #
-# Each input directory is scanned recursively for *.txt files below a labels
-# directory. Every non-empty annotation row is converted to media, frame,
-# class_id, confidence rows. Class names and source provenance are written to a
-# sidecar class map.
+# Each input directory is scanned for per-video _SUCCESS markers or a Prefect
+# .completed_files.txt manifest. Only labels registered by one of those
+# completion mechanisms are converted. Failed or incomplete outputs are
+# ignored.
 ###############################################################################
 
 set -euo pipefail
@@ -197,7 +197,7 @@ echo "[INFO] Class map CSV: $CLASS_MAP_CSV"
 echo "[INFO] Class YAML: $CLASS_YAML"
 echo "[INFO] Output CSV: $OUTPUT_CSV"
 
-# Build a reproducible, sorted list of source label files.
+# Build a reproducible, sorted list of labels from completed video directories.
 FILELIST="$TEMP_DIR/all_files.txt"
 CLASS_MAP="$TEMP_DIR/class_map.tsv"
 > "$FILELIST"
@@ -207,20 +207,63 @@ CLASS_MAP="$TEMP_DIR/class_map.tsv"
     --class-map-csv "$CLASS_MAP_CSV" \
     --class-map-tsv "$CLASS_MAP"
 
+DIR_INDEX=0
 for DIR in "${INPUT_DIRS[@]}"; do
     if [[ -d "$DIR" ]]; then
         echo "[INFO] Scanning directory: $DIR" >&2
-        find "$DIR" -type f -path "*/labels/*.txt"
+
+        # Native Slurm/local outputs keep one success marker beside each
+        # completed video's labels.
+        while IFS= read -r -d '' marker; do
+            LABELS_DIR="$(dirname "$marker")/labels"
+            if [[ -d "$LABELS_DIR" ]]; then
+                find "$LABELS_DIR" -maxdepth 1 -type f -name "*.txt"
+            fi
+        done < <(find "$DIR" -type f -name "_SUCCESS" -print0)
+
+        # The existing Prefect runner stores completed source paths centrally
+        # and writes labels below gpuN/labels. Match label basenames against
+        # that manifest so partial failed output remains excluded.
+        PREFECT_MANIFEST="$DIR/.completed_files.txt"
+        if [[ -f "$PREFECT_MANIFEST" ]]; then
+            COMPLETED_MEDIA="$TEMP_DIR/prefect_completed_${DIR_INDEX}.txt"
+            while IFS= read -r source_path; do
+                source_name="${source_path##*/}"
+                printf '%s\n' "${source_name%.*}"
+            done < "$PREFECT_MANIFEST" | sort -u > "$COMPLETED_MEDIA"
+
+            find "$DIR" -type f -path "*/gpu*/labels/*.txt" | awk \
+                -v completed_media="$COMPLETED_MEDIA" '
+                BEGIN {
+                    while ((getline media < completed_media) > 0) {
+                        completed[media] = 1
+                    }
+                    close(completed_media)
+                }
+                {
+                    label = $0
+                    filename = label
+                    sub(/^.*\//, "", filename)
+                    sub(/\.txt$/, "", filename)
+                    media = filename
+                    sub(/_[^_]*$/, "", media)
+                    if (media in completed) {
+                        print label
+                    }
+                }
+            '
+        fi
     else
         echo "[WARN] Directory not found; skipping: $DIR" >&2
     fi
+    DIR_INDEX=$((DIR_INDEX + 1))
 done | sort > "$FILELIST"
 
 TOTAL_FILES=$(wc -l < "$FILELIST")
 echo "[INFO] Total label files discovered: $TOTAL_FILES"
 
 if [[ "$TOTAL_FILES" -eq 0 ]]; then
-    echo "[ERROR] No .txt label files found below a labels directory." >&2
+    echo "[ERROR] No label files found for registered completed videos." >&2
     exit 1
 fi
 

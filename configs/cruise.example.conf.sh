@@ -27,7 +27,6 @@ VIDEO_INPUT_DIR="${VIDEO_DATA_ROOT}/${CRUISE_COLLECTION}_${CRUISE}/${CAMERA_STRE
 MEDIA_LIST_DIR="${STINGRAY_DATA_ROOT}/media_list/${CAMERA_STREAM}"
 ANALYSIS_WORK_DIR="image_abundance_work/${CAMERA_STREAM}"
 PREDICTION_PROJECT="${MODEL_OUTPUT_ROOT}/inference_${CRUISE,,}"
-PREDICTION_WORK_DIR="${PREDICTION_PROJECT}/work"
 
 VIDEO_LIST_CSV="${MEDIA_LIST_DIR}/${RUN_NAME}_video_list_${TIMESTAMP_MODE}.csv"
 FRAME_LIST_CSV="${MEDIA_LIST_DIR}/${RUN_NAME}_frame_list_${TIMESTAMP_MODE}.csv"
@@ -51,14 +50,11 @@ TIMESTAMP_SUFFIXES=("$VIDEO_SUFFIX")
 
 ENABLE_PREDICTION="1"
 MODEL_WEIGHTS_PATH="CHANGEME_MODEL_WEIGHTS_PATH"
-PREDICTION_NAME="predict"
-PREDICTION_BATCH_SIZE=1000
 PREDICTION_VIDEO_STATUSES=("valid")
+PREDICTION_FILE_LIMIT=""
+LOCAL_PREDICTION_DEVICES="0"
 
 PREDICTION_ARGS=(
-    mode=predict
-    task=detect
-    "model=$MODEL_WEIGHTS_PATH"
     save=False
     save_txt=True
     save_conf=True
@@ -68,7 +64,6 @@ PREDICTION_ARGS=(
     half=False
     imgsz=1280
     batch=64
-    device=0
     max_det=300
     vid_stride=1
     stream_buffer=False
@@ -82,7 +77,6 @@ PREDICTION_ARGS=(
     show_labels=True
     show_conf=True
     show_boxes=True
-    exist_ok=True
 )
 
 ###############################################################################

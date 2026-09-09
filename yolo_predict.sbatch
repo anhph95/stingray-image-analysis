@@ -5,13 +5,12 @@
 #SBATCH --time=24:00:00
 #SBATCH --partition=gpu
 #SBATCH --gres=gpu:1
-#SBATCH --array=0-0%3
-#SBATCH --output=slogs/%A_%a.%x.out
-#SBATCH --error=slogs/%A_%a.%x.err
+#SBATCH --output=slogs/%A.%x.out
+#SBATCH --error=slogs/%A.%x.err
 #SBATCH --mail-type=ALL
 
 ###############################################################################
-# Run Ultralytics YOLO prediction as a Slurm array.
+# Run resumable Ultralytics YOLO prediction with one worker per allocated GPU.
 ###############################################################################
 
 # LOGGING JOB DETAILS
@@ -37,22 +36,21 @@ if [[ ! -f "$CONFIG_PATH" ]]; then
 fi
 source "$CONFIG_PATH"
 
-BATCH_ID="${SLURM_ARRAY_TASK_ID:-all}"
-
-require_switch() {
-    local name="$1"
-    local value="$2"
-    if [[ "$value" != "0" && "$value" != "1" ]]; then
-        echo "[ERROR] $name must be 0 or 1; received: $value" >&2
-        exit 2
-    fi
-}
-
 require_configured() {
     local name="$1"
     local value="$2"
     if [[ -z "$value" || "$value" == *CHANGEME* ]]; then
         echo "[ERROR] Configure $name before running this workflow." >&2
+        exit 2
+    fi
+}
+
+require_file() {
+    local name="$1"
+    local value="$2"
+    require_configured "$name" "$value"
+    if [[ ! -f "$value" ]]; then
+        echo "[ERROR] $name does not exist: $value" >&2
         exit 2
     fi
 }
@@ -69,98 +67,59 @@ require_arguments_configured() {
     done
 }
 
-require_switch "ENABLE_PREDICTION" "$ENABLE_PREDICTION"
+if [[ "$ENABLE_PREDICTION" != "0" && "$ENABLE_PREDICTION" != "1" ]]; then
+    echo "[ERROR] ENABLE_PREDICTION must be 0 or 1; received: $ENABLE_PREDICTION" >&2
+    exit 2
+fi
 if [[ "$ENABLE_PREDICTION" == "0" ]]; then
     echo "[INFO] Model prediction is disabled by: $CONFIG_PATH"
     exit 0
 fi
+
 require_configured "MODEL_ENV" "$MODEL_ENV"
-require_configured "CRUISE" "$CRUISE"
-require_configured "VIDEO_SUFFIX" "$VIDEO_SUFFIX"
-require_configured "PREDICTION_WORK_DIR" "$PREDICTION_WORK_DIR"
 require_configured "PREDICTION_PROJECT" "$PREDICTION_PROJECT"
-require_configured "PREDICTION_NAME" "$PREDICTION_NAME"
-require_configured "VIDEO_LIST_CSV" "$VIDEO_LIST_CSV"
+require_configured "VIDEO_SUFFIX" "$VIDEO_SUFFIX"
+require_file "MODEL_WEIGHTS_PATH" "$MODEL_WEIGHTS_PATH"
+require_file "VIDEO_LIST_CSV" "$VIDEO_LIST_CSV"
 require_arguments_configured "PREDICTION_ARGS" "${PREDICTION_ARGS[@]}"
 
+FILE_LIMIT="${PREDICTION_FILE_LIMIT:-}"
+if [[ -n "$FILE_LIMIT" && ! "$FILE_LIMIT" =~ ^[1-9][0-9]*$ ]]; then
+    echo "[ERROR] PREDICTION_FILE_LIMIT must be empty or a positive integer." >&2
+    exit 2
+fi
 if [[ ! -f "$MODEL_ENV/bin/activate" ]]; then
     echo "[ERROR] Model environment does not exist: $MODEL_ENV" >&2
     exit 2
 fi
 
 source "$MODEL_ENV/bin/activate"
-if ! command -v yolo >/dev/null 2>&1; then
-    echo "[ERROR] The configured environment does not provide the yolo command." >&2
-    exit 2
-fi
 if ! command -v python >/dev/null 2>&1; then
     echo "[ERROR] The configured environment does not provide Python." >&2
     exit 2
 fi
 
-echo "[INFO] Configuration: $CONFIG_PATH"
-echo "[INFO] Environment: $MODEL_ENV"
-
-mkdir -p "$PREDICTION_WORK_DIR" "$PREDICTION_PROJECT"
-
-if [[ ! -f "$VIDEO_LIST_CSV" ]]; then
-    echo "[ERROR] VIDEO_LIST_CSV does not exist: $VIDEO_LIST_CSV" >&2
-    exit 2
-fi
-echo "[INFO] Using timestamp video list: $VIDEO_LIST_CSV"
-
-if [[ "$BATCH_ID" != "all" && ! "$BATCH_ID" =~ ^[0-9]+$ ]]; then
-    echo "[ERROR] BATCH_ID must be a non-negative integer or 'all'." >&2
-    exit 2
-fi
-if [[ ! "$PREDICTION_BATCH_SIZE" =~ ^[1-9][0-9]*$ ]]; then
-    echo "[ERROR] PREDICTION_BATCH_SIZE must be a positive integer." >&2
-    exit 2
-fi
-
-if [[ "$BATCH_ID" == "all" ]]; then
-    BATCH_LABEL="all"
-else
-    printf -v BATCH_LABEL '%06d' "$BATCH_ID"
-fi
-BATCH_SOURCE_LIST="$PREDICTION_WORK_DIR/source_${BATCH_LABEL}.txt"
+mkdir -p "$PREDICTION_PROJECT"
 STATUS_FILTER=$(IFS=,; echo "${PREDICTION_VIDEO_STATUSES[*]}")
 
-read -r ELIGIBLE_COUNT SELECTED_COUNT < <(
-    python select_video_batch.py \
-        --video-list "$VIDEO_LIST_CSV" \
-        --batch-id "$BATCH_ID" \
-        --batch-size "$PREDICTION_BATCH_SIZE" \
-        --statuses "$STATUS_FILTER" \
-        --suffix "$VIDEO_SUFFIX" \
-        --output "$BATCH_SOURCE_LIST"
+echo "[INFO] Configuration: $CONFIG_PATH"
+echo "[INFO] Environment: $MODEL_ENV"
+echo "[INFO] CUDA_VISIBLE_DEVICES: ${CUDA_VISIBLE_DEVICES:-unset}"
+
+PREDICT_COMMAND=(
+    python yolo_predict.py
+    --video-list "$VIDEO_LIST_CSV"
+    --statuses "$STATUS_FILTER"
+    --suffix "$VIDEO_SUFFIX"
+    --model "$MODEL_WEIGHTS_PATH"
+    --project "$PREDICTION_PROJECT"
+    --devices allocated
+    --run-id "$SLURM_JOB_ID"
 )
-
-echo "[INFO] Eligible AVI files: $ELIGIBLE_COUNT"
-echo "[INFO] BATCH_ID=$BATCH_ID PREDICTION_BATCH_SIZE=$PREDICTION_BATCH_SIZE selected=$SELECTED_COUNT"
-if [[ "$SELECTED_COUNT" -eq 0 ]]; then
-    echo "[INFO] No videos assigned to this batch; nothing to run."
-    exit 0
+if [[ -n "$FILE_LIMIT" ]]; then
+    PREDICT_COMMAND+=(--file-limit "$FILE_LIMIT")
 fi
+PREDICT_COMMAND+=("${PREDICTION_ARGS[@]}")
 
-BATCH_NAME="${PREDICTION_NAME}_${BATCH_LABEL}"
-RUN_DIR="$PREDICTION_PROJECT/$BATCH_NAME"
-SUCCESS_MARKER="$RUN_DIR/_SUCCESS"
-if [[ -f "$SUCCESS_MARKER" ]]; then
-    echo "[INFO] Batch already complete: $SUCCESS_MARKER"
-    exit 0
-fi
+"${PREDICT_COMMAND[@]}"
 
-PREDICTION_COMMAND=(
-    yolo
-    "${PREDICTION_ARGS[@]}"
-    "source=$BATCH_SOURCE_LIST"
-    "project=$PREDICTION_PROJECT"
-    "name=$BATCH_NAME"
-)
-echo "[INFO] Starting YOLO prediction."
-"${PREDICTION_COMMAND[@]}"
-mkdir -p "$RUN_DIR"
-touch "$SUCCESS_MARKER"
-echo "[INFO] Batch completion marker: $SUCCESS_MARKER"
-echo "[DONE] YOLO prediction completed."

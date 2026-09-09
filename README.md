@@ -53,9 +53,9 @@ Run every command below from the repository root. The runners do not change
 directories, so relative config, environment, and helper paths resolve from the
 submission directory.
 
-## Bash or Prefect
+## Bash
 
-Run any required job directly in WSL2 or from a Prefect shell task:
+Run any required job directly in WSL2:
 
 ```bash
 bash frame_timestamps.sh configs/my_cruise.conf.sh
@@ -64,9 +64,30 @@ bash image_abundance.sh configs/my_cruise.conf.sh
 bash yolo_train.sh configs/my_training.conf.sh
 ```
 
-For inference, the default `BATCH_ID=all` processes all eligible videos. Set a
-zero-based batch explicitly when needed, for example by prefixing the inference
-command with `BATCH_ID=0`.
+Inference uses `LOCAL_PREDICTION_DEVICES` from the cruise config and loads the
+model once on each selected device. Set `PREDICTION_FILE_LIMIT=6` to process
+only the first six remaining videos; leave it empty to process all remaining
+videos.
+
+## Prefect container jobs
+
+The timestamp and abundance Prefect flows run the existing shell jobs from the
+lightweight `ghcr.io/anhph95/stingray-image-analysis:latest` container. Deploy
+them with the generic deployment helper in `amplify-prefect`:
+
+```bash
+python src/deploy_flow.py https://github.com/anhph95/stingray-image-analysis.git prefect_flows.py:frame_timestamps stingray-frame-timestamps
+python src/deploy_flow.py https://github.com/anhph95/stingray-image-analysis.git prefect_flows.py:image_abundance stingray-image-abundance
+```
+
+For each run, provide the host `config_path` and every top-level path used by
+that config in `data_roots`, such as `["/proj"]`. Abundance also requires a
+persistent host `work_dir`; the flow mounts it as `image_abundance_work` inside
+the container.
+
+The container pins StingrayTools to a release tag with `STINGRAYTOOLS_REF` in
+`docker/stingray-image-analysis/Dockerfile`. When StingrayTools is released,
+update that tag and rebuild the image. Existing images remain unchanged.
 
 ## Slurm
 
@@ -77,20 +98,19 @@ file already sets `#SBATCH --mail-type=ALL`.
 ```bash
 mkdir -p slogs
 sbatch --mail-user=YOUR_EMAIL frame_timestamps.sbatch configs/my_cruise.conf.sh
-sbatch --mail-user=YOUR_EMAIL --array=0-99%3 yolo_predict.sbatch configs/my_cruise.conf.sh
+sbatch --mail-user=YOUR_EMAIL --gres=gpu:3 yolo_predict.sbatch configs/my_cruise.conf.sh
 sbatch --mail-user=YOUR_EMAIL image_abundance.sbatch configs/my_cruise.conf.sh
 sbatch --mail-user=YOUR_EMAIL yolo_train.sbatch configs/my_training.conf.sh
 ```
 
-For inference, the number of array elements is
-`ceil(eligible videos / PREDICTION_BATCH_SIZE)`. Therefore the last zero-based
-array index is that value minus one. In `--array=0-99%3`, `0-99` selects 100
-batches and `%3` limits execution to three concurrent array tasks.
+Inference is one multi-GPU job, not a Slurm array. The command above requests
+three GPUs; omit `--gres=gpu:3` to use the script's one-GPU default. Each GPU
+loads the model once and draws videos from the same remaining-work queue.
 
 Each job can be submitted independently when its required inputs already
 exist. When jobs are submitted together, use Slurm `afterok` dependencies or an
 external orchestrator so inference waits for timestamps and abundance waits for
-the complete inference array.
+the complete inference job.
 
 ## Job Reference
 
@@ -103,17 +123,21 @@ inspected.
 
 ### YOLO Inference
 
-Reads eligible videos from `VIDEO_LIST_CSV` and writes batch directories under
-`PREDICTION_PROJECT`. Configure model weights, batch size, accepted video
-statuses, and native Ultralytics arguments in `PREDICTION_ARGS`. Successful
-batches receive an `_SUCCESS` marker and are skipped when rerun.
+Reads eligible videos from `VIDEO_LIST_CSV` and removes videos already marked
+complete. Slurm outputs are organized as
+`PREDICTION_PROJECT/runs/SLURM_JOB_ID/worker_ID/VIDEO_ID`. Every allocated GPU
+loads the model once and processes videos from a shared queue. A video receives
+an `_SUCCESS` marker only after inference completes, so later runs may use a
+different GPU count and automatically process only the remaining videos.
 
 ### Image Abundance
 
 Reads `FRAME_LIST_CSV`, prediction labels, class names, and `SENSOR_CSV`, then
 writes `ABUNDANCE_OUT_CSV`. It never scans videos or regenerates timestamps.
 When `MERGE_LABELS="1"`, it first builds `DETECTIONS_CSV` and `CLASS_MAP_CSV`
-from the prediction label directories.
+from outputs registered by per-video `_SUCCESS` markers or the existing
+Prefect `.completed_files.txt` manifest. Partial outputs from failed videos are
+ignored.
 
 The abundance calculation filters detections by `SCORE_THRESH`, groups them
 into time bins of width `BIN_WIDTH`, and converts counts to concentration using

@@ -1,0 +1,11 @@
+.git
+.github
+.venv
+__pycache__
+*.py[cod]
+configs
+image_abundance_work
+slogs
+tests
+yolo_*
+
