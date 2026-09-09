@@ -87,18 +87,6 @@ Train a model independently when new annotations are available:
 bash yolo_train.sh configs/my_training.conf.sh
 ```
 
-Timestamp extraction and label conversion use at most one fewer worker than
-the number of visible CPUs:
-
-$$
-W = \max(1, N_{\mathrm{CPU}} - 1).
-$$
-
-The remaining CPU is available for coordination, logging, and input/output.
-Set `TIMESTAMP_MAX_WORKERS` or `JOBS` to use fewer workers. Prediction loads
-one model on each device listed in `LOCAL_PREDICTION_DEVICES` and distributes
-the remaining videos among those devices.
-
 ## Run with Slurm
 
 Create the log directory before submission because Slurm opens the log files
@@ -117,32 +105,9 @@ sbatch --mail-user=YOUR_EMAIL image_abundance.sbatch configs/my_cruise.conf.sh
 sbatch --mail-user=YOUR_EMAIL yolo_train.sbatch configs/my_training.conf.sh
 ```
 
-The timestamp job receives 12 CPUs by default and uses 11 workers. The
-abundance job receives 32 CPUs by default and uses 31 workers while converting
-detection labels. Slurm enforces the requested CPU, memory, GPU, and wall-time
-limits.
-
-YOLO prediction requests one GPU by default. Request more GPUs when processing
-a large cruise:
-
-```bash
-sbatch --mail-user=YOUR_EMAIL --gres=gpu:3 yolo_predict.sbatch configs/my_cruise.conf.sh
-```
-
-One model is loaded on each allocated GPU. All GPU workers draw videos from the
-same queue, so each video is processed once. This is one multi-GPU job, not a
-Slurm array.
-
 The jobs may be submitted independently when their required inputs already
 exist. For a complete analysis, wait for timestamps before prediction and wait
-for prediction before abundance. A Slurm dependency sequence can be submitted
-as follows:
-
-```bash
-timestamp_job=$(sbatch --parsable frame_timestamps.sbatch configs/my_cruise.conf.sh)
-prediction_job=$(sbatch --parsable --dependency=afterok:$timestamp_job yolo_predict.sbatch configs/my_cruise.conf.sh)
-sbatch --dependency=afterok:$prediction_job image_abundance.sbatch configs/my_cruise.conf.sh
-```
+for prediction before abundance.
 
 ## Scientific calculations
 
