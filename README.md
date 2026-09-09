@@ -41,6 +41,10 @@ and `FRAME_LIST_CSV` for abundance. Inference and abundance consume these files
 without rebuilding them. Set a job's `ENABLE_*` value to `0` to make that job
 exit without processing.
 
+Abundance intermediate files are written below `image_abundance_work/` in the
+repository and are ignored by Git. The completed `ABUNDANCE_OUT_CSV` remains in
+the configured Stingray data output directory.
+
 Training is independent of a cruise. Copy
 `configs/yolo_train.example.conf.sh` to `configs/my_training.conf.sh` and edit
 its environment and `TRAIN_ARGS`.
