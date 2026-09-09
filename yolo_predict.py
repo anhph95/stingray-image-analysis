@@ -205,9 +205,13 @@ def main() -> int:
     if args.file_limit is not None and args.file_limit < 1:
         raise ValueError("--file-limit must be a positive integer")
 
+    # Give Ultralytics an absolute project path so it cannot nest the configured
+    # workspace beneath its default runs/detect directory.
+    project = args.project.expanduser().resolve()
+
     statuses = {value for value in args.statuses.split(",") if value}
     eligible = read_eligible_videos(args.video_list, statuses, args.suffix)
-    completed = read_completed_videos(args.project)
+    completed = read_completed_videos(project)
     pending = [video for video in eligible if str(video) not in completed]
     previously_completed = len(eligible) - len(pending)
     remaining = pending
@@ -228,7 +232,7 @@ def main() -> int:
     if not run_id:
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
         run_id = f"{timestamp}_{os.getpid()}"
-    run_dir = args.project / "runs" / run_id
+    run_dir = project / "runs" / run_id
     run_dir.mkdir(parents=True, exist_ok=True)
 
     predict_kwargs = parse_predict_args(args.predict_args)
