@@ -5,50 +5,47 @@ from __future__ import annotations
 
 import argparse
 import csv
-import re
 from pathlib import Path
 
-
-def clean(value: str) -> str:
-    value = value.strip()
-    if value.startswith(("'", '"')) and value.endswith(("'", '"')):
-        value = value[1:-1]
-    return value
+import yaml
 
 
 def read_class_names(path: Path) -> list[tuple[int, str]]:
-    names_started = False
-    names_by_id: dict[int, str] = {}
-    names_list: list[str] = []
+    document = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if not isinstance(document, dict) or "names" not in document:
+        raise ValueError(f"{path} does not contain a names section")
 
-    for raw_line in path.read_text(encoding="utf-8").splitlines():
-        line_without_comment = raw_line.split("#", 1)[0].rstrip()
-        stripped = line_without_comment.strip()
-        if not stripped:
-            continue
+    names = document["names"]
+    if isinstance(names, list):
+        items = list(enumerate(names))
+    elif isinstance(names, dict):
+        items = []
+        for raw_class_id, class_name in names.items():
+            try:
+                class_id = int(raw_class_id)
+            except (TypeError, ValueError) as error:
+                raise ValueError(
+                    f"Invalid class ID in {path}: {raw_class_id!r}"
+                ) from error
+            items.append((class_id, class_name))
+        items.sort()
+    else:
+        raise ValueError(f"{path} names must be a list or mapping")
 
-        if not names_started:
-            if stripped == "names:":
-                names_started = True
-            continue
+    normalized: list[tuple[int, str]] = []
+    seen_ids: set[int] = set()
+    for class_id, raw_name in items:
+        if class_id < 0 or class_id in seen_ids:
+            raise ValueError(f"Invalid or duplicate class ID in {path}: {class_id}")
+        class_name = str(raw_name).strip()
+        if not class_name:
+            raise ValueError(f"Empty class name in {path} for ID {class_id}")
+        normalized.append((class_id, class_name))
+        seen_ids.add(class_id)
 
-        if not raw_line.startswith((" ", "\t", "-")) and stripped != "names:":
-            break
-
-        list_match = re.match(r"^-\s*(.+)$", stripped)
-        if list_match:
-            names_list.append(clean(list_match.group(1)))
-            continue
-
-        dict_match = re.match(r"^(\d+)\s*:\s*(.+)$", stripped)
-        if dict_match:
-            names_by_id[int(dict_match.group(1))] = clean(dict_match.group(2))
-
-    if names_by_id:
-        return sorted(names_by_id.items())
-    if names_list:
-        return list(enumerate(names_list))
-    raise ValueError(f"{path} does not contain a supported names section")
+    if not normalized:
+        raise ValueError(f"{path} names section is empty")
+    return normalized
 
 
 def write_rows(path: Path, rows: list[list[object]], delimiter: str) -> None:

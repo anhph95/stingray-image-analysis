@@ -7,6 +7,7 @@
 #SBATCH --gres=gpu:2
 #SBATCH --output=slogs/%A.%x.out
 #SBATCH --error=slogs/%A.%x.err
+#SBATCH --mail-type=ALL
 
 ###############################################################################
 # Run Ultralytics YOLO training as one Slurm job.

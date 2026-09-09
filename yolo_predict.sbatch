@@ -8,6 +8,7 @@
 #SBATCH --array=0-0%3
 #SBATCH --output=slogs/%A_%a.%x.out
 #SBATCH --error=slogs/%A_%a.%x.err
+#SBATCH --mail-type=ALL
 
 ###############################################################################
 # Run Ultralytics YOLO prediction as a Slurm array.

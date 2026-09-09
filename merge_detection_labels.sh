@@ -2,9 +2,10 @@
 ###############################################################################
 # Merge space-separated label files into one canonical detection table.
 #
-# Each input label directory is scanned recursively for *.txt files. Every
-# non-empty annotation row is converted to media, frame, class_id, confidence
-# rows. Class names and source provenance are written to a sidecar class map.
+# Each input directory is scanned recursively for *.txt files below a labels
+# directory. Every non-empty annotation row is converted to media, frame,
+# class_id, confidence rows. Class names and source provenance are written to a
+# sidecar class map.
 ###############################################################################
 
 set -euo pipefail
@@ -209,7 +210,7 @@ CLASS_MAP="$TEMP_DIR/class_map.tsv"
 for DIR in "${INPUT_DIRS[@]}"; do
     if [[ -d "$DIR" ]]; then
         echo "[INFO] Scanning directory: $DIR" >&2
-        find "$DIR" -type f -name "*.txt"
+        find "$DIR" -type f -path "*/labels/*.txt"
     else
         echo "[WARN] Directory not found; skipping: $DIR" >&2
     fi
@@ -219,7 +220,7 @@ TOTAL_FILES=$(wc -l < "$FILELIST")
 echo "[INFO] Total label files discovered: $TOTAL_FILES"
 
 if [[ "$TOTAL_FILES" -eq 0 ]]; then
-    echo "[ERROR] No .txt label files found." >&2
+    echo "[ERROR] No .txt label files found below a labels directory." >&2
     exit 1
 fi
 

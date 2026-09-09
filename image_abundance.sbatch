@@ -6,8 +6,7 @@
 #SBATCH --partition=compute
 #SBATCH --output=slogs/%A.%x.out
 #SBATCH --error=slogs/%A.%x.err
-##SBATCH --mail-type=ALL
-##SBATCH --mail-user=your.email@example.edu
+#SBATCH --mail-type=ALL
 
 ###############################################################################
 # Run post-inference image abundance processing in one Slurm job.
