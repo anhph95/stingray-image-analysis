@@ -25,13 +25,13 @@ ABUNDANCE_DATASET="shadowgraph"
 
 VIDEO_INPUT_DIR="${VIDEO_DATA_ROOT}/${CRUISE_COLLECTION}_${CRUISE}/${CAMERA_STREAM}"
 MEDIA_LIST_DIR="${STINGRAY_DATA_ROOT}/media_list/${CAMERA_STREAM}"
-ANALYSIS_WORK_DIR="image_abundance_work/${CAMERA_STREAM}"
+ABUNDANCE_WORKSPACE_DIR="workspace/abundance/${CAMERA_STREAM}"
 PREDICTION_PROJECT="${MODEL_OUTPUT_ROOT}/inference_${CRUISE,,}"
 
 VIDEO_LIST_CSV="${MEDIA_LIST_DIR}/${RUN_NAME}_video_list_${TIMESTAMP_MODE}.csv"
 FRAME_LIST_CSV="${MEDIA_LIST_DIR}/${RUN_NAME}_frame_list_${TIMESTAMP_MODE}.csv"
-DETECTIONS_CSV="${ANALYSIS_WORK_DIR}/${RUN_NAME}_detection_labels.csv"
-CLASS_MAP_CSV="${ANALYSIS_WORK_DIR}/${RUN_NAME}_class_map.csv"
+DETECTIONS_CSV="${ABUNDANCE_WORKSPACE_DIR}/${RUN_NAME}_detection_labels.csv"
+CLASS_MAP_CSV="${ABUNDANCE_WORKSPACE_DIR}/${RUN_NAME}_class_map.csv"
 SENSOR_CSV="${STINGRAY_DATA_ROOT}/dashboard_data/data/${SENSOR_DATASET}/${RUN_NAME}.csv"
 ABUNDANCE_OUT_CSV="${STINGRAY_DATA_ROOT}/dashboard_data/data/${ABUNDANCE_DATASET}/${RUN_NAME}.csv"
 
@@ -39,7 +39,6 @@ ABUNDANCE_OUT_CSV="${STINGRAY_DATA_ROOT}/dashboard_data/data/${ABUNDANCE_DATASET
 # Frame timestamp configuration
 ###############################################################################
 
-ENABLE_TIMESTAMPS="1"
 TIMESTAMP_FILE_LIMIT=""
 TIMESTAMP_MAX_WORKERS=""
 TIMESTAMP_SUFFIXES=("$VIDEO_SUFFIX")
@@ -48,7 +47,6 @@ TIMESTAMP_SUFFIXES=("$VIDEO_SUFFIX")
 # Model prediction configuration
 ###############################################################################
 
-ENABLE_PREDICTION="1"
 MODEL_WEIGHTS_PATH="CHANGEME_MODEL_WEIGHTS_PATH"
 PREDICTION_VIDEO_STATUSES=("valid")
 PREDICTION_FILE_LIMIT=""
@@ -83,7 +81,6 @@ PREDICTION_ARGS=(
 # Image abundance configuration
 ###############################################################################
 
-ENABLE_ABUNDANCE="1"
 CLASS_YAML="CHANGEME_CLASS_NAMES_YAML"
 MERGE_LABELS="1"
 LABEL_DIRS=("$PREDICTION_PROJECT")

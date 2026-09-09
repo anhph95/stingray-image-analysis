@@ -1,4 +1,4 @@
 .venv/
-image_abundance_work/
+workspace/
 __pycache__/
 *.py[cod]

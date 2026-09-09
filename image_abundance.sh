@@ -59,13 +59,8 @@ require_switch() {
     fi
 }
 
-require_switch "ENABLE_ABUNDANCE" "$ENABLE_ABUNDANCE"
 require_switch "MERGE_LABELS" "$MERGE_LABELS"
 require_switch "ADD_CI" "$ADD_CI"
-if [[ "$ENABLE_ABUNDANCE" == "0" ]]; then
-    echo "[INFO] Image abundance is disabled by: $CONFIG_PATH"
-    exit 0
-fi
 
 require_dir "STINGRAY_DATA_ROOT" "$STINGRAY_DATA_ROOT"
 require_file "CLASS_YAML" "$CLASS_YAML"

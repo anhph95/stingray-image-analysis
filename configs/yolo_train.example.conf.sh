@@ -2,7 +2,6 @@
 # YOLO training configuration
 ###############################################################################
 
-ENABLE_TRAINING="1"
 MODEL_ENV=".venv/cvision"
 
 TRAIN_ARGS=(

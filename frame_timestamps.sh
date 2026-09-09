@@ -51,20 +51,6 @@ require_file() {
     fi
 }
 
-require_switch() {
-    local name="$1"
-    local value="$2"
-    if [[ "$value" != "0" && "$value" != "1" ]]; then
-        echo "[ERROR] $name must be 0 or 1; received: $value" >&2
-        exit 2
-    fi
-}
-
-require_switch "ENABLE_TIMESTAMPS" "$ENABLE_TIMESTAMPS"
-if [[ "$ENABLE_TIMESTAMPS" == "0" ]]; then
-    echo "[INFO] Frame timestamps are disabled by: $CONFIG_PATH"
-    exit 0
-fi
 if [[ "$TIMESTAMP_MODE" != "fast" && "$TIMESTAMP_MODE" != "details" ]]; then
     echo "[ERROR] TIMESTAMP_MODE must be 'fast' or 'details'." >&2
     exit 2

@@ -57,15 +57,6 @@ require_arguments_configured() {
     done
 }
 
-if [[ "$ENABLE_TRAINING" != "0" && "$ENABLE_TRAINING" != "1" ]]; then
-    echo "[ERROR] ENABLE_TRAINING must be 0 or 1; received: $ENABLE_TRAINING" >&2
-    exit 2
-fi
-if [[ "$ENABLE_TRAINING" == "0" ]]; then
-    echo "[INFO] Model training is disabled by: $CONFIG_PATH"
-    exit 0
-fi
-
 require_configured "MODEL_ENV" "$MODEL_ENV"
 require_arguments_configured "TRAIN_ARGS" "${TRAIN_ARGS[@]}"
 

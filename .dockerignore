@@ -4,8 +4,7 @@
 __pycache__
 *.py[cod]
 configs
-image_abundance_work
+workspace
 slogs
 tests
 yolo_*
-

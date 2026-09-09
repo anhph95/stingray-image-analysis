@@ -28,9 +28,6 @@ Options:
                           Default: python3.
   --temp-dir DIR          Parent directory for temporary files.
                           Defaults to SLURM_TMPDIR, then TMPDIR, then /tmp.
-  --archive-filelist      Save the sorted source file list beside the output.
-                          This is the default.
-  --no-archive-filelist   Do not save the source file list.
   -h, --help              Show this help message.
 
 Example:
@@ -51,7 +48,6 @@ CLASS_YAML=""
 PYTHON_BIN="${PYTHON_BIN:-python3}"
 JOBS=""
 TEMP_PARENT="${SLURM_TMPDIR:-${TMPDIR:-/tmp}}"
-ARCHIVE_FILELIST=1
 INPUT_DIRS=()
 
 while [[ $# -gt 0 ]]; do
@@ -103,14 +99,6 @@ while [[ $# -gt 0 ]]; do
             fi
             TEMP_PARENT="$2"
             shift 2
-            ;;
-        --archive-filelist)
-            ARCHIVE_FILELIST=1
-            shift
-            ;;
-        --no-archive-filelist)
-            ARCHIVE_FILELIST=0
-            shift
             ;;
         -h|--help)
             usage
@@ -267,15 +255,6 @@ if [[ "$TOTAL_FILES" -eq 0 ]]; then
     exit 1
 fi
 
-if [[ "$ARCHIVE_FILELIST" -eq 1 ]]; then
-    TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-    ARCHIVE_PATH="$OUTPUT_DIR/filelist_${TIMESTAMP}.txt"
-    cp "$FILELIST" "$ARCHIVE_PATH"
-    echo "[INFO] Saved source file list: $ARCHIVE_PATH"
-else
-    ARCHIVE_PATH=""
-fi
-
 # Write the header before parallel workers generate body rows.
 echo "media,frame,class_id,confidence" > "$OUTPUT_CSV"
 
@@ -328,7 +307,4 @@ done
 cat "$TEMP_DIR"/job_*.txt >> "$OUTPUT_CSV"
 
 echo "[SUCCESS] Output CSV created: $OUTPUT_CSV"
-if [[ -n "$ARCHIVE_PATH" ]]; then
-    echo "[INFO] File list archived: $ARCHIVE_PATH"
-fi
 echo "[DONE]"

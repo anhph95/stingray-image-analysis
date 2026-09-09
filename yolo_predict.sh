@@ -52,15 +52,6 @@ require_arguments_configured() {
     done
 }
 
-if [[ "$ENABLE_PREDICTION" != "0" && "$ENABLE_PREDICTION" != "1" ]]; then
-    echo "[ERROR] ENABLE_PREDICTION must be 0 or 1; received: $ENABLE_PREDICTION" >&2
-    exit 2
-fi
-if [[ "$ENABLE_PREDICTION" == "0" ]]; then
-    echo "[INFO] Model prediction is disabled by: $CONFIG_PATH"
-    exit 0
-fi
-
 require_configured "MODEL_ENV" "$MODEL_ENV"
 require_configured "PREDICTION_PROJECT" "$PREDICTION_PROJECT"
 require_configured "VIDEO_SUFFIX" "$VIDEO_SUFFIX"
@@ -107,4 +98,3 @@ fi
 PREDICT_COMMAND+=("${PREDICTION_ARGS[@]}")
 
 "${PREDICT_COMMAND[@]}"
-

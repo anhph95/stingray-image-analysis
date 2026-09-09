@@ -10,7 +10,7 @@ from prefect import flow, get_run_logger, task
 
 DEFAULT_IMAGE = "ghcr.io/anhph95/stingray-image-analysis:latest"
 CONTAINER_CONFIG = "/run/cruise.conf.sh"
-CONTAINER_WORK_DIR = "/app/image_abundance_work"
+CONTAINER_WORKSPACE = "/app/workspace"
 
 
 def _existing_path(path: str, description: str) -> Path:
@@ -27,7 +27,7 @@ def run_image_analysis_job(
     config_path: str,
     data_roots: list[str],
     image: str,
-    work_dir: str | None = None,
+    workspace_dir: str | None = None,
 ) -> None:
     """Pull the processing image and run one existing shell job inside it."""
     commands = {
@@ -49,10 +49,10 @@ def run_image_analysis_job(
         volumes[str(root)] = {"bind": str(root), "mode": "rw"}
 
     # Preserve abundance intermediates after the short-lived container exits.
-    if work_dir is not None:
-        work = Path(work_dir).expanduser().resolve()
-        work.mkdir(parents=True, exist_ok=True)
-        volumes[str(work)] = {"bind": CONTAINER_WORK_DIR, "mode": "rw"}
+    if workspace_dir is not None:
+        workspace = Path(workspace_dir).expanduser().resolve()
+        workspace.mkdir(parents=True, exist_ok=True)
+        volumes[str(workspace)] = {"bind": CONTAINER_WORKSPACE, "mode": "rw"}
 
     client = docker.from_env()
     logger = get_run_logger()
@@ -97,7 +97,7 @@ def frame_timestamps(
 def image_abundance(
     config_path: str,
     data_roots: list[str],
-    work_dir: str,
+    workspace_dir: str,
     image: str = DEFAULT_IMAGE,
 ) -> None:
     """Merge detection labels and compute image abundance."""
@@ -106,6 +106,5 @@ def image_abundance(
         config_path,
         data_roots,
         image,
-        work_dir,
+        workspace_dir,
     )
-
