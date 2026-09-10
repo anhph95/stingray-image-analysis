@@ -22,7 +22,7 @@ Use Linux or WSL2 with Python 3.11 or newer. Run the following commands from
 the directory where you want to keep the project:
 
 ```bash
-git clone https://github.com/anhph95/stingray-image-analysis.git
+git clone https://github.com/WHOIGit/stingray-image-analysis.git
 cd stingray-image-analysis
 python3 -m venv .venv/cvision
 source .venv/cvision/bin/activate
